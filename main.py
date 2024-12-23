@@ -9,9 +9,20 @@ import cv2 as cv
 SERVER = ""
 PORT= 65432
 ADDR = (SERVER,PORT)
-FORMAT = 'utf-8'
 
 class Meeting():
+    def __init__(self):
+        self.video_image = Image.open("final_year_project/img/video-camera.png")
+        resize_video_image = self.video_image.resize((35,35))
+        self.video_image = ImageTk.PhotoImage(resize_video_image)
+
+        self.audio_image = Image.open("final_year_project/img/audio.png")
+        resize_audio_image = self.audio_image.resize((35,35))
+        self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
+
+        self.info_image = Image.open("final_year_project/img/information.png")
+        resize_info_image = self.info_image.resize((35,35))
+        self.info_image = ImageTk.PhotoImage(resize_info_image)
 
     def Create_Meeting(self,name):
 
@@ -32,25 +43,18 @@ class Meeting():
         cap = None
         running = False
 
-        self.video_image = Image.open("final_year_project/img/video-camera.png")
-        resize_video_image = self.video_image.resize((35,35))
-        self.video_image = ImageTk.PhotoImage(resize_video_image)
+        container_frame = tb.Frame(self.Meeting_root)
+        container_frame.pack(fill="both")
 
-        self.audio_image = Image.open("final_year_project/img/audio.png")
-        resize_audio_image = self.audio_image.resize((35,35))
-        self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
+        menus_frame = tb.Frame(container_frame)
+        menus_frame.pack(pady=10,side="left")
 
-        self.info_image = Image.open("final_year_project/img/information.png")
-        resize_info_image = self.info_image.resize((35,35))
-        self.info_image = ImageTk.PhotoImage(resize_info_image)
-
-        video_label = tb.Label(self.Meeting_root)
-        video_label.pack(pady=20)
-
-        blank_frame(470,430)
-
-        menus_frame = tb.Frame(self.Meeting_root)
-        menus_frame.pack(pady=10)
+        info_btn = tb.Button(menus_frame,
+                             image=self.info_image,
+                             #command=
+                             bootstyle = "success"
+                             )
+        info_btn.pack(pady=20,padx=30)
 
         video_variable = StringVar(value="Off")
         audio_variable= StringVar(value="Mute")
@@ -62,16 +66,16 @@ class Meeting():
                                     image=self.video_image,
                                     compound=LEFT
                                     )
-        video_menu.pack(pady=20,padx=30,side="left")
+        video_menu.pack(pady=20,padx=30)
 
         audio_menu = tb.Menubutton(menus_frame,
                                     direction='above',
                                     image= self.audio_image,
                                     compound=LEFT
                                     )
-        audio_menu.pack(pady=20,padx=30,side="left")
+        audio_menu.pack(pady=20,padx=30)
 
-        Close_meeting = tb.Menubutton(self.Meeting_root,
+        Close_meeting = tb.Menubutton(menus_frame,
                                       direction='above',
                                       text="End",
                                       compound=LEFT,
@@ -132,19 +136,119 @@ class Meeting():
         audio_menu['menu'] = menu2
         Close_meeting['menu'] = close_menu
 
-        info_btn = tb.Button(menus_frame,
-                             image=self.info_image,
-                             #command=
-                             bootstyle = "success"
-                             )
-        info_btn.pack(pady=20,padx=30,side="left")
+        video_alignment_frame = tb.Frame(container_frame)
+        video_alignment_frame.pack(pady=10,side="right")
+
+
+        video_label = tb.Label(video_alignment_frame)
+        video_label.pack(pady=20)
+
+        blank_frame(430,470)
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
         
 
-    def connecting_meeting():
-        pass
+    def connecting_meeting(self,part_name):
+        if MC_Sumbit_btn:
+            con_pop.destroy()
+
+        self.Meeting_root = tb.Toplevel(title="meeting",
+                                      #themename="morph",
+                                      #size=(600,400)
+                                      )
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+        
+        global cap, running, video_label,host_name
+        
+        participant_name = part_name
+
+        cap = None
+        running = False
+
+        container_frame = tb.Frame(self.Meeting_root)
+        container_frame.pack(fill="both")
+
+        menus_frame = tb.Frame(container_frame)
+        menus_frame.pack(pady=10,side="left")
+
+        info_btn = tb.Button(menus_frame,
+                             image= self.info_image,
+                             #command=
+                             bootstyle = "success"
+                             )
+        info_btn.pack(pady=20,padx=30)
+
+        video_variable = StringVar(value="Off")
+        audio_variable= StringVar(value="Mute")
+
+        video_menu = tb.Menubutton(menus_frame,
+                                    direction='above',
+                                    #text="video status",
+                                    image=self.video_image,
+                                    compound=LEFT
+                                    )
+        video_menu.pack(pady=20,padx=30)
+
+        audio_menu = tb.Menubutton(menus_frame,
+                                    direction='above',
+                                    image= self.audio_image,
+                                    compound=LEFT
+                                    )
+        audio_menu.pack(pady=20,padx=30)
+
+        menu1= tb.Menu(video_menu, tearoff=0)
+        menu1.add_radiobutton(label="On",
+                              variable=video_variable,
+                              background="#06f912",
+                              foreground="#f8dedd",
+                              font=('Arial Rounded MT Bold',14),
+                              command = start_video
+                              )
+
+        menu1.add_radiobutton(label="Off",
+                              variable=video_variable,
+                              background="#d4342b",
+                              foreground="#f8dedd",
+                              font=('Arial Rounded MT Bold',14),
+                              command = stop_video
+                              )
+        
+        menu2 = tb.Menu(audio_menu, tearoff=0)
+        menu2.add_radiobutton(label="Unmute",
+                              variable=audio_variable,
+                              background="#06f912",
+                              foreground="#f8dedd",
+                              font=('Arial Rounded MT Bold',14)
+                              )
+        
+        menu2.add_radiobutton(label="Mute",
+                               variable=audio_variable,
+                               background="#d4342b",
+                               foreground="#f8dedd",
+                               font=('Arial Rounded MT Bold',14)
+                               )
+        
+        close_meeting_btn = tb.Button(menus_frame,
+                                      bootstyle = "danger",
+                                      text="End",
+                                      command= lambda: meeting.end_meeting("End meeting")
+                                      )
+        close_meeting_btn.pack(pady=20,padx=10)
+        
+        video_menu['menu'] = menu1
+        audio_menu['menu'] = menu2
+
+        video_alignment_frame = tb.Frame(container_frame)
+        video_alignment_frame.pack(pady=10,side="right")
+
+
+        video_label = tb.Label(video_alignment_frame)
+        video_label.pack(pady=20)
+        blank_frame(430,470)
+
+        btn1.config(state=DISABLED)
+        btn2.config(state=DISABLED)
 
     def send_video():
         pass
@@ -185,29 +289,31 @@ meeting = Meeting()
 #function
 
 def connection_pop():
+    global con_pop, MC_Sumbit_btn
+
     con_pop = tb.Toplevel(size=(600,450))
     con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
-    SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
-    SERVER_IP_label.pack(padx=40,pady=10)
+    MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
+    MC_SERVER_IP_label.pack(padx=40,pady=10)
     
-    SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
-    SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
+    MC_SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
+    MC_SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
 
-    Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
-    Meeting_password_label.pack(padx=40,pady=10)
+    MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
+    MC_Meeting_password_label.pack(padx=40,pady=10)
 
-    Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
-    Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
+    MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
+    MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
 
-    name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
-    name_entry_label.pack(padx=40,pady=10)
+    MC_name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
+    MC_name_entry_label.pack(padx=40,pady=10)
 
-    name_entry = tb.Entry(con_pop,bootstyle="success")
-    name_entry.pack(padx=40,ipadx=60,pady=10)
+    MC_name_entry = tb.Entry(con_pop,bootstyle="success")
+    MC_name_entry.pack(padx=40,ipadx=60,pady=10)
 
-    Sumbit_btn = tb.Button(con_pop,text="CONNECT",bootstyle="info")
-    Sumbit_btn.pack(padx=10,pady=20)
+    MC_Sumbit_btn = tb.Button(con_pop,text="CONNECT",bootstyle="info",command=lambda : meeting.connecting_meeting(MC_name_entry))
+    MC_Sumbit_btn.pack(padx=10,pady=20)
 
 def host_name_entry():
 
@@ -272,7 +378,7 @@ def stop_video():
     if cap:
         cap.release()
     
-    blank_frame(470,430)
+    blank_frame(430,470)
 
 def blank_frame(w,h):
     blank = np.zeros((w,h),dtype='uint8')
