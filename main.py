@@ -22,7 +22,7 @@ class Meeting():
                                       #themename="morph",
                                       #size=(600,400)
                                       )
-        self.Meeting_root.iconbitmap("ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         global cap, running, video_label,host_name
         
@@ -32,16 +32,22 @@ class Meeting():
         cap = None
         running = False
 
-        self.video_image = Image.open("img/video-camera.png")
+        self.video_image = Image.open("final_year_project/img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("img/audio.png")
+        self.audio_image = Image.open("final_year_project/img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
-        self.audio_image = ImageTk.PhotoImage(resize_audio_image)
+        self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
+
+        self.info_image = Image.open("final_year_project/img/information.png")
+        resize_info_image = self.info_image.resize((35,35))
+        self.info_image = ImageTk.PhotoImage(resize_info_image)
 
         video_label = tb.Label(self.Meeting_root)
         video_label.pack(pady=20)
+
+        blank_frame(470,430)
 
         menus_frame = tb.Frame(self.Meeting_root)
         menus_frame.pack(pady=10)
@@ -65,7 +71,7 @@ class Meeting():
                                     )
         audio_menu.pack(pady=20,padx=30,side="left")
 
-        Close_meeting = tb.Menubutton(menus_frame,
+        Close_meeting = tb.Menubutton(self.Meeting_root,
                                       direction='above',
                                       text="End",
                                       compound=LEFT,
@@ -106,12 +112,12 @@ class Meeting():
                                )
         
         close_menu = tb.Menu(Close_meeting, tearoff=0)
-        close_menu.add_radiobutton(label="End all",
+        close_menu.add_radiobutton(label="End all meeting",
                                    variable=Close_meeting_variable,
                                    background="#d4342b",
                                    foreground="#f8dedd",
                                    font=('Arial Rounded MT Bold',14),
-                                   command= lambda :self.end_meeting("End all")
+                                   command= lambda :self.end_meeting("End all meeting")
                                    )
         
         close_menu.add_radiobutton(label="End meeting",
@@ -126,7 +132,12 @@ class Meeting():
         audio_menu['menu'] = menu2
         Close_meeting['menu'] = close_menu
 
-        #self.Meeting_root.mainloop()
+        info_btn = tb.Button(menus_frame,
+                             image=self.info_image,
+                             #command=
+                             bootstyle = "success"
+                             )
+        info_btn.pack(pady=20,padx=30,side="left")
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -149,7 +160,7 @@ class Meeting():
 
     def end_meeting(self,Close):
 
-        if Close in "End all":
+        if Close in "End all meeting":
             stop_video()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
@@ -161,13 +172,10 @@ class Meeting():
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
 
-#app = Meeting()
-#app.Create_Meeting("dharshan")
-
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("ppico.ico")
+root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
 #Meeting obj
 
@@ -178,7 +186,7 @@ meeting = Meeting()
 
 def connection_pop():
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("ppico.ico")
+    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
     SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     SERVER_IP_label.pack(padx=40,pady=10)
@@ -206,7 +214,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("ppico.ico")
+    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -237,7 +245,14 @@ def video_loop():
         if ret:
             #print(frame.shape)
             try:
-                frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+                #width, height = frame.shape[:2]
+                #print(width,height)
+                new_width = 470
+                new_height = 430
+
+                resize_video_frame = cv.resize(frame, (new_width,new_height))
+
+                frame = cv.cvtColor(resize_video_frame, cv.COLOR_BGR2RGB)
                 img = Image.fromarray(frame)
                 imgtk = ImageTk.PhotoImage(image=img)
 
@@ -257,15 +272,21 @@ def stop_video():
     if cap:
         cap.release()
     
-    #blank = np.zeros((480, 640, 3),dtype='uint8')
-    #offimg = cv.putText(blank,host_name,(255,255),cv.FONT_HERSHEY_TRIPLEX,1.0,(0,255,0),2)
-    video_label.configure(image="")
+    blank_frame(470,430)
 
-app_icon1 = Image.open("img/video-camera.png")
+def blank_frame(w,h):
+    blank = np.zeros((w,h),dtype='uint8')
+    #offimg = cv.putText(blank,host_name,(255,255),cv.FONT_HERSHEY_TRIPLEX,1.0,(0,255,0),2)
+    img = Image.fromarray(blank)
+    imageTk = ImageTk.PhotoImage(img)
+    video_label.imageTk = imageTk 
+    video_label.configure(image=imageTk)
+
+app_icon1 = Image.open("final_year_project/img/video-camera.png")
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("img/add.png")
+app_icon2 = Image.open("final_year_project/img/add.png")
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
