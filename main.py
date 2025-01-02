@@ -9,7 +9,7 @@ import zlib
 import struct
 import threading
 
-SERVER = "192.168.1.4"
+SERVER = ""
 PORT= 65432
 ADDR = (SERVER,PORT)
 
