@@ -30,10 +30,20 @@ class Meeting():
 
         self.received_frame = {}
         self.lock = threading.Lock()
-
-        
+        self.running = False
+        self.cap = None
+        self.client_socket = None
 
     def Create_Meeting(self,host_name):
+
+        if not hasattr(self, 'client_socket') or self.client_socket is None:
+            try:
+                self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                self.client_socket.connect(ADDR)
+                print("Connect to server")
+            except Exception as e:
+                print(f"Error connecting to server: {e}")
+                return
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
@@ -41,10 +51,8 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting")
         self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
-        global cap,running,video_label,recv_video_label, recv_video_label2,recv_video_label3
         
         self.name = host_name
-        cap = None
 
         container_frame = tb.Frame(self.Meeting_root)
         container_frame.pack(fill="both")
@@ -59,9 +67,8 @@ class Meeting():
                              )
         info_btn.pack(pady=20,padx=30)
 
-        video_variable = StringVar(value="Off")
-        audio_variable= StringVar(value="Mute")
-        Close_meeting_variable = StringVar()
+        self.video_variable = BooleanVar(value=False)
+        self.audio_variable= BooleanVar(value=False)
 
         video_menu = tb.Menubutton(menus_frame,
                                     direction='above',
@@ -88,31 +95,33 @@ class Meeting():
 
         menu1= tb.Menu(video_menu, tearoff=0)
         menu1.add_radiobutton(label="On",
-                              variable=video_variable,
                               background="#06f912",
+                              variable= self.video_variable,
+                              value= True,
                               foreground="#f8dedd",
                               font=('Arial Rounded MT Bold',14),
-                              command = lambda: start_stop_video(status=True,name=self.name)
+                              command = self.start_stop_video
                               )
 
         menu1.add_radiobutton(label="Off",
-                              variable=video_variable,
                               background="#d4342b",
                               foreground="#f8dedd",
+                              variable= self.video_variable,
+                              value= False,
                               font=('Arial Rounded MT Bold',14),
-                              command = lambda: start_stop_video(status=False,name=self.name)
+                              command = self.start_stop_video
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
         menu2.add_radiobutton(label="Unmute",
-                              variable=audio_variable,
+                              variable= self.audio_variable,
+                              value= True,
                               background="#06f912",
                               foreground="#f8dedd",
                               font=('Arial Rounded MT Bold',14)
                               )
         
         menu2.add_radiobutton(label="Mute",
-                               variable=audio_variable,
                                background="#d4342b",
                                foreground="#f8dedd",
                                font=('Arial Rounded MT Bold',14)
@@ -120,7 +129,6 @@ class Meeting():
         
         close_menu = tb.Menu(Close_meeting, tearoff=0)
         close_menu.add_radiobutton(label="End all meeting",
-                                   variable=Close_meeting_variable,
                                    background="#d4342b",
                                    foreground="#f8dedd",
                                    font=('Arial Rounded MT Bold',14),
@@ -128,7 +136,6 @@ class Meeting():
                                    )
         
         close_menu.add_radiobutton(label="End meeting",
-                                   variable=Close_meeting_variable,
                                    background="#6a8daf",
                                    foreground="#f8dedd",
                                    font=('Arial Rounded MT Bold',14),
@@ -143,26 +150,28 @@ class Meeting():
         video_alignment_frame.pack(pady=5)
 
 
-        video_label = tb.Label(video_alignment_frame)
-        video_label.pack(pady=5,padx=5,side="left")
+        self.video_label = tb.Label(video_alignment_frame)
+        self.video_label.pack(pady=5,padx=5,side="left")
 
-        recv_video_label = tb.Label(video_alignment_frame)
-        recv_video_label.pack(pady=10,padx=5,side="left")
+        self.recv_video_label = tb.Label(video_alignment_frame)
+        self.recv_video_label.pack(pady=10,padx=5,side="left")
 
         video_alignment_frame2 = tb.Frame(container_frame)
         video_alignment_frame2.pack(pady=5)
 
 
-        recv_video_label2 = tb.Label(video_alignment_frame2)
-        recv_video_label2.pack(pady=5,padx=5,side="left")
+        self.recv_video_label2 = tb.Label(video_alignment_frame2)
+        self.recv_video_label2.pack(pady=5,padx=5,side="left")
 
-        recv_video_label3 = tb.Label(video_alignment_frame2)
-        recv_video_label3.pack(pady=5,padx=5,side="left")
+        self.recv_video_label3 = tb.Label(video_alignment_frame2)
+        self.recv_video_label3.pack(pady=5,padx=5,side="left")
 
-        start_stop_video(status=False,name=self.name)
+        self.update_blank_frame()
         #blank_frame(430,470)
-        
-
+        # self.user_lp = threading.Thread(target=self.video_loop)
+        # self.host_send = threading.Thread(target=self.send_video)
+        # self.user_lp.start()
+        # self.host_send.start()
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -177,11 +186,9 @@ class Meeting():
                                         )
         self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
-        global cap,running,video_label,recv_video_label,recv_video_label2,recv_video_label3
         
         self.name = part_name
 
-        cap = None
 
         container_frame = tb.Frame(self.Meeting_root)
         container_frame.pack(fill="both")
@@ -196,8 +203,8 @@ class Meeting():
                              )
         info_btn.pack(pady=10,padx=30)
 
-        video_variable = StringVar(value="Off")
-        audio_variable= StringVar(value="Mute")
+        self.video_variable = BooleanVar(value=False)
+        self.audio_variable= BooleanVar(value=False)
 
         video_menu = tb.Menubutton(menus_frame,
                                     direction='above',
@@ -216,31 +223,33 @@ class Meeting():
 
         menu1= tb.Menu(video_menu, tearoff=0)
         menu1.add_radiobutton(label="On",
-                              variable=video_variable,
+                              variable= self.video_variable,
+                              value= True,
                               background="#06f912",
                               foreground="#f8dedd",
                               font=('Arial Rounded MT Bold',14),
-                              command = lambda: start_stop_video(status=True,name=self.name)
+                              command = self.start_stop_video
                               )
 
         menu1.add_radiobutton(label="Off",
-                              variable=video_variable,
+                              variable= self.video_variable,
+                              value= False,
                               background="#d4342b",
                               foreground="#f8dedd",
                               font=('Arial Rounded MT Bold',14),
-                              command = lambda: start_stop_video(status=False,name=self.name)
+                              command = self.start_stop_video
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
         menu2.add_radiobutton(label="Unmute",
-                              variable=audio_variable,
+                              variable= self.audio_variable,
+                              value= True,
                               background="#06f912",
                               foreground="#f8dedd",
                               font=('Arial Rounded MT Bold',14)
                               )
         
         menu2.add_radiobutton(label="Mute",
-                               variable=audio_variable,
                                background="#d4342b",
                                foreground="#f8dedd",
                                font=('Arial Rounded MT Bold',14)
@@ -263,85 +272,124 @@ class Meeting():
         video_alignment_frame = tb.Frame(container_frame)
         video_alignment_frame.pack(pady=5)
 
+        self.video_label = tb.Label(video_alignment_frame)
+        self.video_label.pack(pady=5,padx=5,side="left")
 
-        video_label = tb.Label(video_alignment_frame)
-        video_label.pack(pady=5)
-
-        video_label = tb.Label(video_alignment_frame)
-        video_label.pack(pady=5,padx=5,side="left")
-
-        recv_video_label = tb.Label(video_alignment_frame)
-        recv_video_label.pack(pady=10,padx=5,side="left")
+        self.recv_video_label = tb.Label(video_alignment_frame)
+        self.recv_video_label.pack(pady=10,padx=5,side="left")
 
         video_alignment_frame2 = tb.Frame(container_frame)
         video_alignment_frame2.pack(pady=5)
 
 
-        recv_video_label2 = tb.Label(video_alignment_frame2)
-        recv_video_label2.pack(pady=5,padx=5,side="left")
+        self.recv_video_label2 = tb.Label(video_alignment_frame2)
+        self.recv_video_label2.pack(pady=5,padx=5,side="left")
 
-        recv_video_label3 = tb.Label(video_alignment_frame2)
-        recv_video_label3.pack(pady=5,padx=5,side="left")
+        self.recv_video_label3 = tb.Label(video_alignment_frame2)
+        self.recv_video_label3.pack(pady=5,padx=5,side="left")
         
-        start_stop_video(status=False,name=self.name)
+        
         blank_frame(430,470)
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
-    '''
-    def start_stop_video(self,status = False, name=None):
-        global running, video_label
-        running = status
-        self.cap = cv.VideoCapture(0)
-        if running:
-            if not self.cap.isOpened():
-                print("Error: Could not open video source.")
-                running = False
-                return
-            
-            self.video_loop()
+    
+    def start_stop_video(self):
 
-        if not running:
-            if self.cap:
+
+        self.running = self.video_variable.get()    
+        if self.running:
+
+            if not hasattr(self,"cap") or self.cap is None:
+                self.cap = cv.VideoCapture(0)
+
+                if not self.cap.isOpened():
+                    print("Error: Could not open video source.")
+                    self.running = False
+                    return
+
+                if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
+                    self.video_thread = threading.Thread(target=self.video_loop,daemon=True)
+                    self.video_thread.start()
+
+                if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
+                    self.send_thread = threading.Thread(target=self.send_video,daemon=True)
+                    self.send_thread.start()
+        else: 
+            self.running = False
+            self.update_blank_frame()
+
+            if hasattr(self, 'cap') and self.cap:
                 self.cap.release()
-                
-            blank = np.zeros((430,470,3),dtype='uint8')
-            text_size = cv.getTextSize(name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
-            text_x = (blank.shape[1] - text_size[0])//2
-            text_y = (blank.shape[0] + text_size[1])//2
-            text_frame = cv.putText(blank,name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
-            img = Image.fromarray(text_frame)
-            imageTK = ImageTk.PhotoImage(img)
-            video_label.imageTK = imageTK
-            video_label.configure(image=imageTK)
 
+    def update_blank_frame(self):
+        blank = np.zeros((430,470,3),dtype='uint8')
+        text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
+        text_x = (blank.shape[1] - text_size[0])//2
+        text_y = (blank.shape[0] + text_size[1])//2
+        text_frame = cv.putText(blank,self.name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
+        img = Image.fromarray(text_frame)
+        imageTK = ImageTk.PhotoImage(img)
+        self.video_label.imageTK = imageTK
+        self.video_label.configure(image=imageTK)
 
     def video_loop(self):
-        global running, video_label
-        if running:
+        if self.running:
             ret, frame = self.cap.read()
             if ret:
                 try:
-
-                    new_width = 470
-                    new_height = 430
-                    
+                    new_width, new_height = 470 ,430
                     new_frame = cv.resize(frame,(new_width,new_height))
                     frame = cv.cvtColor(new_frame,cv.COLOR_BGR2RGB)
                     img = Image.fromarray(frame)
                     imgTk = ImageTk.PhotoImage(img)
-                    video_label.imgTk = imgTk
-                    video_label.configure(image = imgTk)
+                    self.video_label.imgTk = imgTk
+                    self.video_label.configure(image = imgTk)
                 except Exception as e:
                     print(f"Error in video loop: {e}")
-                    self.start_stop_video(status=False)
 
             else:
                 print("failed to capture frame.")
-            video_label.after(10, self.video_loop)   
-    '''
+            self.video_label.after(10, self.video_loop)   
+    
     def send_video(self):
-        pass
+        try:
+            while True:
+                if not self.running:
+
+                    blank = np.zeros((470,430,3),dtype=np.uint8)
+                    text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
+                    text_x = (blank.shape[1] - text_size[0])//2
+                    text_y = (blank.shape[0] + text_size[1])//2
+                    text_frame = cv.putText(blank,self.name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
+
+                    _,compressed_frame = cv.imencode('.jpg',text_frame,[cv.IMWRITE_JPEG_QUALITY,80])
+
+                    compressed_data = zlib.compress(compressed_frame.tobytes())
+
+                else:
+                    ret , frame =  self.cap.read()
+                    if ret:
+                        new_width, new_height = 470,430
+                        resize_frame = cv.resize(frame,(new_width,new_height))
+                        _,compressed_frame = cv.imencode('.jpg',resize_frame,[cv.IMWRITE_JPEG_QUALITY,80])
+
+                        compressed_data = zlib.compress(compressed_frame.tobytes())
+
+                    else:
+                        print("Failed to capture frame")
+                        continue
+
+                frame_size = len(compressed_data)
+
+                try:
+                    self.client_socket.sendall(struct.pack("Q",frame_size) + compressed_data)
+                except Exception as e:
+                    print(f"Error on sending data:{e}")
+                    break
+        finally:
+            if self.cap:
+                self.cap.release()
 
     def recv_video(self):
         pass
@@ -352,15 +400,29 @@ class Meeting():
         pass
 
     def end_meeting(self,Close):
-
         if Close in "End all meeting":
-            start_stop_video(status=False)
+            self.running = False
+            if self.cap:
+                self.cap.release() 
+                self.cap = None
+            if self.client_socket:
+                self.client_socket.close()
+            self.video_thread.join()
+            self.send_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
 
         if Close in "End meeting":
-            start_stop_video(status=False)
+            self.running = False
+            self.cap = None
+            if self.cap:
+                self.cap.release() 
+                self.cap = None
+            if self.client_socket:
+                self.client_socket.close()
+            self.video_thread.join()
+            self.send_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -418,110 +480,7 @@ def host_name_entry():
     HNE_Sumbit_btn = tb.Button(HNE_name_pop,text="CONNECT",bootstyle="info",command=lambda: meeting.Create_Meeting(HNE_name_entry.get()))
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
-def start_stop_video(status = False, name=None):
-    global cap, running, video_label
-    running = status
-    if running:
-        cap = cv.VideoCapture(0)
-        if not cap.isOpened():
-            print("Error: Could not open video source.")
-            running = False
-            return
-        
-        video_loop()
 
-    if not running:
-        if cap:
-            cap.release()
-            cap = None
-        blank = np.zeros((430,470,3),dtype='uint8')
-        text_size = cv.getTextSize(name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
-        text_x = (blank.shape[1] - text_size[0])//2
-        text_y = (blank.shape[0] + text_size[1])//2
-        text_frame = cv.putText(blank,name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
-        img = Image.fromarray(text_frame)
-        imageTK = ImageTk.PhotoImage(img)
-        video_label.imageTK = imageTK
-        video_label.configure(image=imageTK)
-
-
-def video_loop():
-    global cap, running, video_label
-    if running:
-        ret, frame = cap.read()
-        if ret:
-            try:
-
-                new_width = 470
-                new_height = 430
-                
-                new_frame = cv.resize(frame,(new_width,new_height))
-                frame = cv.cvtColor(new_frame,cv.COLOR_BGR2RGB)
-                img = Image.fromarray(frame)
-                imgTk = ImageTk.PhotoImage(img)
-                video_label.imgTk = imgTk
-                video_label.configure(image = imgTk)
-            except Exception as e:
-                print(f"Error in video loop: {e}")
-                start_stop_video(status=False)
-
-        else:
-            print("failed to capture frame.")
-        video_label.after(10, video_loop)   
-
-'''
-def start_video():
-    global cap, running
-
-    if not running:
-        running = True
-        cap = cv.VideoCapture(0)
-        if not cap.isOpened():
-            print("Error: Could not open video source.")
-            running = False
-            return
-        
-        #threading.Thread(target=meeting.send_video).start()
-        video_loop()
-
-
-def video_loop():
-    global cap, running, video_label
-
-    if running:
-        ret, frame = cap.read()
-        if ret:
-            #print(frame.shape)
-            try:
-                #width, height = frame.shape[:2]
-                #print(width,height)
-                new_width = 470
-                new_height = 430
-
-                resize_video_frame = cv.resize(frame, (new_width,new_height))
-
-                frame = cv.cvtColor(resize_video_frame, cv.COLOR_BGR2RGB)
-                img = Image.fromarray(frame)
-                imgtk = ImageTk.PhotoImage(image=img)
-
-                video_label.imgtk = imgtk
-                video_label.configure(image=imgtk)
-            except Exception as e:
-                print(f"Error in video loop: {e}")
-                stop_video()
-        else:
-            print("Failed to capture frame.")
-        video_label.after(10, video_loop)
-
-def stop_video():
-    global cap, running, video_label
-    running = False
-
-    if cap:
-        cap.release()
-    
-    blank_frame(430,470)
-'''
 def blank_frame(h,w):
     global  recv_video_label, recv_video_label2, recv_video_label3
     #blank = np.zeros((h,w,3),dtype='uint8')
