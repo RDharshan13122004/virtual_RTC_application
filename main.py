@@ -9,7 +9,7 @@ import zlib
 import struct
 import threading
 
-SERVER = ""
+SERVER = "192.168.29.224"
 PORT= 65432
 ADDR = (SERVER,PORT)
 
@@ -167,11 +167,6 @@ class Meeting():
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
 
         self.update_blank_frame()
-        #blank_frame(430,470)
-        # self.user_lp = threading.Thread(target=self.video_loop)
-        # self.host_send = threading.Thread(target=self.send_video)
-        # self.user_lp.start()
-        # self.host_send.start()
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -227,8 +222,7 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14),
-                              command = self.start_stop_video
+                              font=('Arial Rounded MT Bold',14)
                               )
 
         menu1.add_radiobutton(label="Off",
@@ -236,8 +230,7 @@ class Meeting():
                               value= False,
                               background="#d4342b",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14),
-                              command = self.start_stop_video
+                              font=('Arial Rounded MT Bold',14)
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
@@ -287,9 +280,6 @@ class Meeting():
 
         self.recv_video_label3 = tb.Label(video_alignment_frame2)
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
-        
-        
-        blank_frame(430,470)
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -306,6 +296,8 @@ class Meeting():
                 if not self.cap.isOpened():
                     print("Error: Could not open video source.")
                     self.running = False
+                    self.cap.release()
+                    self.cap = None
                     return
 
                 if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
@@ -318,10 +310,12 @@ class Meeting():
         else: 
             self.running = False
             self.update_blank_frame()
-
             if hasattr(self, 'cap') and self.cap:
-                self.cap.release()
+                #self.cap.release()
+                self.cap = None
+            
 
+            
     def update_blank_frame(self):
         blank = np.zeros((430,470,3),dtype='uint8')
         text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
@@ -367,7 +361,7 @@ class Meeting():
 
                     compressed_data = zlib.compress(compressed_frame.tobytes())
 
-                else:
+                if self.running:
                     ret , frame =  self.cap.read()
                     if ret:
                         new_width, new_height = 470,430
@@ -481,27 +475,6 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-def blank_frame(h,w):
-    global  recv_video_label, recv_video_label2, recv_video_label3
-    #blank = np.zeros((h,w,3),dtype='uint8')
-    
-    # if name:
-    #     text_size = cv.getTextSize(name,cv.FONT_HERSHEY_TRIPLEX,1.0,2)[0]
-    #     text_x = (blank.shape[1] - text_size[0])//2
-    #     text_y = (blank.shape[0] + text_size[1])//2
-    #     cv.putText(blank,name,(text_x,text_y),cv.FONT_HERSHEY_TRIPLEX,1.0,(255,255,255),2)
-    
-    blank = np.zeros((h,w),dtype='uint8')
-    img = Image.fromarray(blank)
-    imageTk = ImageTk.PhotoImage(img)
-    recv_video_label.imageTk = imageTk 
-    recv_video_label.configure(image=imageTk)
-
-    recv_video_label2.imageTk = imageTk 
-    recv_video_label2.configure(image=imageTk)
-
-    recv_video_label3.imageTk = imageTk 
-    recv_video_label3.configure(image=imageTk)
 
 app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
