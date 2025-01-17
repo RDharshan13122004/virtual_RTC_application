@@ -8,8 +8,9 @@ import cv2 as cv
 import zlib
 import struct
 import threading
+import numpy as np
 
-SERVER = ""
+SERVER = "192.168.29.224"
 PORT= 65432
 ADDR = (SERVER,PORT)
 
@@ -30,7 +31,6 @@ class Meeting():
 
         self.received_frame = {}
         self.lock = threading.Lock()
-        self.running = False
         self.cap = None
         self.client_socket = None
 
@@ -167,12 +167,9 @@ class Meeting():
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
 
         self.update_blank_frame()
-        #blank_frame(430,470)
-        # self.user_lp = threading.Thread(target=self.video_loop)
-        # self.host_send = threading.Thread(target=self.send_video)
-        # self.user_lp.start()
-        # self.host_send.start()
 
+        self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
+        self.recv_thread.start()
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
         
@@ -227,8 +224,7 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14),
-                              command = self.start_stop_video
+                              font=('Arial Rounded MT Bold',14)
                               )
 
         menu1.add_radiobutton(label="Off",
@@ -236,8 +232,7 @@ class Meeting():
                               value= False,
                               background="#d4342b",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14),
-                              command = self.start_stop_video
+                              font=('Arial Rounded MT Bold',14)
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
@@ -294,18 +289,16 @@ class Meeting():
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
     
-    def start_stop_video(self):
-
-
-        self.running = self.video_variable.get()    
-        if self.running:
+    def start_stop_video(self):   
+        if self.video_variable.get():
 
             if not hasattr(self,"cap") or self.cap is None:
                 self.cap = cv.VideoCapture(0)
 
                 if not self.cap.isOpened():
                     print("Error: Could not open video source.")
-                    self.running = False
+                    self.cap.release()
+                    self.cap = None
                     return
 
                 if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
@@ -316,12 +309,13 @@ class Meeting():
                     self.send_thread = threading.Thread(target=self.send_video,daemon=True)
                     self.send_thread.start()
         else: 
-            self.running = False
             self.update_blank_frame()
-
             if hasattr(self, 'cap') and self.cap:
                 self.cap.release()
+                #self.cap = None
+            
 
+            
     def update_blank_frame(self):
         blank = np.zeros((430,470,3),dtype='uint8')
         text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
@@ -334,7 +328,7 @@ class Meeting():
         self.video_label.configure(image=imageTK)
 
     def video_loop(self):
-        if self.running:
+        if self.video_variable.get():
             ret, frame = self.cap.read()
             if ret:
                 try:
@@ -355,7 +349,7 @@ class Meeting():
     def send_video(self):
         try:
             while True:
-                if not self.running:
+                if not self.video_variable.get():
 
                     blank = np.zeros((470,430,3),dtype=np.uint8)
                     text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
@@ -367,7 +361,7 @@ class Meeting():
 
                     compressed_data = zlib.compress(compressed_frame.tobytes())
 
-                else:
+                if self.video_variable.get():
                     ret , frame =  self.cap.read()
                     if ret:
                         new_width, new_height = 470,430
@@ -392,7 +386,64 @@ class Meeting():
                 self.cap.release()
 
     def recv_video(self):
-        pass
+        try:
+            while True:
+                client_id_data = self.client_socket.recv(4)
+                if not client_id_data:
+                    break
+
+                client_id = struct.unpack("I",client_id_data)[0]
+
+                frame_size_data = self.client_socket.recv(8)
+                if not frame_size_data:
+                    break
+
+                frame_size = struct.unpack("Q",frame_size_data)[0]
+                frame_data = b''
+
+                while len(frame_data) < frame_size:
+                    packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
+                    if not packet:
+                        break
+
+                    frame_data += packet
+
+                if len(frame_data) != frame_size:
+                    print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
+
+                try:
+                    decompressed_data = zlib.decompress(frame_data)
+                    np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
+                    frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
+
+                    with self.lock:
+                        self.received_frame[client_id] = frame
+
+                except zlib.error as e:
+                    print(f"Decompression error: {e}")
+                except Exception as e:
+                    print(f"Error in decoding frame: {e}")
+        except Exception as e:
+            print(f"Error on receving data: {e}")
+        finally:
+            self.client_socket.close()
+
+    def display_recv_frame(self):
+        try:
+            with self.lock:
+                for client_id , frame in self.received_frame.items():
+                    if frame is not None:
+                        img = Image.fromarray(cv.cvtColor(frame,cv.COLOR_BGR2RGB)) 
+                        imgtk = ImageTk.PhotoImage(imgtk)
+                        self.recv_video_label.imgtk = imgtk
+                        self.recv_video_label.configure(image = imgtk)
+
+                    else:
+                        del self.received_frame[client_id]
+        except Exception as e:
+            print(f"Error in video loop: {e}")
+        
+        self.recv_video_label.after(10,self.display_recv_frame)
     def send_audio(self):
         pass
 
@@ -401,28 +452,37 @@ class Meeting():
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
-            self.running = False
-            if self.cap:
-                self.cap.release() 
+            # self.cap = None
+            # if self.cap:
+            #     self.cap.release() 
+            #     self.cap = None
+            if hasattr(self,'cap') and self.cap:
+                self.cap.release()
                 self.cap = None
-            if self.client_socket:
+            if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
             self.video_thread.join()
             self.send_thread.join()
+            self.recv_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
 
         if Close in "End meeting":
-            self.running = False
-            self.cap = None
-            if self.cap:
-                self.cap.release() 
+            # self.cap = None
+            # if self.cap:
+            #     self.cap.release() 
+            #     self.cap = None
+            # if self.client_socket:
+            #     self.client_socket.close()
+            if hasattr(self,'cap') and self.cap:
+                self.cap.release()
                 self.cap = None
-            if self.client_socket:
+            if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
             self.video_thread.join()
             self.send_thread.join()
+            self.recv_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -483,13 +543,6 @@ def host_name_entry():
 
 def blank_frame(h,w):
     global  recv_video_label, recv_video_label2, recv_video_label3
-    #blank = np.zeros((h,w,3),dtype='uint8')
-    
-    # if name:
-    #     text_size = cv.getTextSize(name,cv.FONT_HERSHEY_TRIPLEX,1.0,2)[0]
-    #     text_x = (blank.shape[1] - text_size[0])//2
-    #     text_y = (blank.shape[0] + text_size[1])//2
-    #     cv.putText(blank,name,(text_x,text_y),cv.FONT_HERSHEY_TRIPLEX,1.0,(255,255,255),2)
     
     blank = np.zeros((h,w),dtype='uint8')
     img = Image.fromarray(blank)
@@ -540,7 +593,6 @@ btn2= tb.Button(inter_frame2,
                 command= connection_pop
                 )
 btn2.pack(pady=10,side="left")
-
 btn2_label = tb.Label(inter_frame2,text="join a meeting",font=("Rockwell Extra Bold",18))
 btn2_label.pack(padx=35,pady=10,side="left")
 
