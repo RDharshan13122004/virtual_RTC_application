@@ -170,6 +170,9 @@ class Meeting():
 
         self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
         self.recv_thread.start()
+
+        self.display_recv_frame()
+
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
         
@@ -282,9 +285,6 @@ class Meeting():
 
         self.recv_video_label3 = tb.Label(video_alignment_frame2)
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
-        
-        
-        blank_frame(430,470)
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -311,8 +311,8 @@ class Meeting():
         else: 
             self.update_blank_frame()
             if hasattr(self, 'cap') and self.cap:
-                self.cap.release()
-                #self.cap = None
+                #self.cap.release()
+                self.cap = None
             
 
             
@@ -431,19 +431,27 @@ class Meeting():
     def display_recv_frame(self):
         try:
             with self.lock:
-                for client_id , frame in self.received_frame.items():
+                for client_id , frame in list(self.received_frame.items()):
                     if frame is not None:
+                        frame = cv.resize(frame,(470,430))
                         img = Image.fromarray(cv.cvtColor(frame,cv.COLOR_BGR2RGB)) 
-                        imgtk = ImageTk.PhotoImage(imgtk)
-                        self.recv_video_label.imgtk = imgtk
-                        self.recv_video_label.configure(image = imgtk)
+                        imgtk = ImageTk.PhotoImage(img)
 
+                        if client_id == list(self.received_frame.keys())[0]:
+                            self.recv_video_label.imgtk = imgtk
+                            self.recv_video_label.configure(image = imgtk)
+                        elif client_id == list(self.received_frame.keys())[1]:
+                            self.recv_video_label2.imgtk = imgtk
+                            self.recv_video_label2.configure(image= imgtk)
+                        elif client_id == list(self.received_frame.keys())[2]:
+                            self.recv_video_label3.imgtk = imgtk
+                            self.recv_video_label3.config(image= imgtk)    
                     else:
                         del self.received_frame[client_id]
         except Exception as e:
             print(f"Error in video loop: {e}")
         
-        self.recv_video_label.after(10,self.display_recv_frame)
+        self.Meeting_root.after(10,self.display_recv_frame)
     def send_audio(self):
         pass
 
@@ -540,21 +548,6 @@ def host_name_entry():
     HNE_Sumbit_btn = tb.Button(HNE_name_pop,text="CONNECT",bootstyle="info",command=lambda: meeting.Create_Meeting(HNE_name_entry.get()))
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
-
-def blank_frame(h,w):
-    global  recv_video_label, recv_video_label2, recv_video_label3
-    
-    blank = np.zeros((h,w),dtype='uint8')
-    img = Image.fromarray(blank)
-    imageTk = ImageTk.PhotoImage(img)
-    recv_video_label.imageTk = imageTk 
-    recv_video_label.configure(image=imageTk)
-
-    recv_video_label2.imageTk = imageTk 
-    recv_video_label2.configure(image=imageTk)
-
-    recv_video_label3.imageTk = imageTk 
-    recv_video_label3.configure(image=imageTk)
 
 app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
