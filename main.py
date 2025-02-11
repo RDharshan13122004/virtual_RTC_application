@@ -10,7 +10,7 @@ import struct
 import threading
 import numpy as np
 
-SERVER = "192.168.29.224"
+SERVER = ""
 PORT= 65432
 ADDR = (SERVER,PORT)
 
@@ -39,6 +39,7 @@ class Meeting():
         if not hasattr(self, 'client_socket') or self.client_socket is None:
             try:
                 self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect(ADDR)
                 print("Connect to server")
             except Exception as e:
@@ -170,6 +171,10 @@ class Meeting():
 
         self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
         self.recv_thread.start()
+
+        self.grid_thread = threading.Thread(target=self.display_recv_frame,daemon=True)
+        self.grid_thread.start()
+
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
         
@@ -282,9 +287,6 @@ class Meeting():
 
         self.recv_video_label3 = tb.Label(video_alignment_frame2)
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
-        
-        
-        blank_frame(430,470)
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -301,9 +303,9 @@ class Meeting():
                     self.cap = None
                     return
 
-                if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
-                    self.video_thread = threading.Thread(target=self.video_loop,daemon=True)
-                    self.video_thread.start()
+                # if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
+                #     self.video_thread = threading.Thread(target=self.video_loop,daemon=True)
+                #     self.video_thread.start()
 
                 if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
                     self.send_thread = threading.Thread(target=self.send_video,daemon=True)
@@ -312,9 +314,7 @@ class Meeting():
             self.update_blank_frame()
             if hasattr(self, 'cap') and self.cap:
                 self.cap.release()
-                #self.cap = None
-            
-
+                self.cap = None
             
     def update_blank_frame(self):
         blank = np.zeros((430,470,3),dtype='uint8')
@@ -327,45 +327,38 @@ class Meeting():
         self.video_label.imageTK = imageTK
         self.video_label.configure(image=imageTK)
 
-    def video_loop(self):
-        if self.video_variable.get():
-            ret, frame = self.cap.read()
-            if ret:
-                try:
-                    new_width, new_height = 470 ,430
-                    new_frame = cv.resize(frame,(new_width,new_height))
-                    frame = cv.cvtColor(new_frame,cv.COLOR_BGR2RGB)
-                    img = Image.fromarray(frame)
-                    imgTk = ImageTk.PhotoImage(img)
-                    self.video_label.imgTk = imgTk
-                    self.video_label.configure(image = imgTk)
-                except Exception as e:
-                    print(f"Error in video loop: {e}")
-
-            else:
-                print("failed to capture frame.")
-            self.video_label.after(10, self.video_loop)   
-    
+    def video_loop(self,frame):
+        try:
+            img = Image.fromarray(frame)
+            imgTk = ImageTk.PhotoImage(img)
+            self.video_label.imgTk = imgTk
+            self.video_label.configure(image = imgTk)
+        except Exception as e:
+            print(f"Error in video loop: {e}")
+                
+        
     def send_video(self):
         try:
             while True:
                 if not self.video_variable.get():
 
-                    blank = np.zeros((470,430,3),dtype=np.uint8)
+                    blank = np.zeros((430,470,3),dtype=np.uint8)
                     text_size = cv.getTextSize(self.name,cv.FONT_HERSHEY_SIMPLEX,1.0,2)[0]
                     text_x = (blank.shape[1] - text_size[0])//2
                     text_y = (blank.shape[0] + text_size[1])//2
-                    text_frame = cv.putText(blank,self.name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
+                    frame = cv.putText(blank,self.name,(text_x,text_y),cv.FONT_HERSHEY_SIMPLEX,1.0,(255,255,255),2)
 
-                    _,compressed_frame = cv.imencode('.jpg',text_frame,[cv.IMWRITE_JPEG_QUALITY,80])
+                    _,compressed_frame = cv.imencode('.jpg',frame,[cv.IMWRITE_JPEG_QUALITY,80])
 
                     compressed_data = zlib.compress(compressed_frame.tobytes())
-
+                    
                 if self.video_variable.get():
-                    ret , frame =  self.cap.read()
+                    if hasattr(self, "cap") and self.cap is not None:
+                        ret, frame = self.cap.read()
                     if ret:
                         new_width, new_height = 470,430
                         resize_frame = cv.resize(frame,(new_width,new_height))
+                        frame = cv.cvtColor(resize_frame,cv.COLOR_BGR2RGB)
                         _,compressed_frame = cv.imencode('.jpg',resize_frame,[cv.IMWRITE_JPEG_QUALITY,80])
 
                         compressed_data = zlib.compress(compressed_frame.tobytes())
@@ -373,9 +366,10 @@ class Meeting():
                     else:
                         print("Failed to capture frame")
                         continue
-
+                
+                self.video_label.after(10,self.video_loop,frame)
+                
                 frame_size = len(compressed_data)
-
                 try:
                     self.client_socket.sendall(struct.pack("Q",frame_size) + compressed_data)
                 except Exception as e:
@@ -389,32 +383,39 @@ class Meeting():
         try:
             while True:
                 client_id_data = self.client_socket.recv(4)
-                if not client_id_data:
+                if client_id_data is None:
+                    print("Error: Failed to receive client ID.")
                     break
 
                 client_id = struct.unpack("I",client_id_data)[0]
 
                 frame_size_data = self.client_socket.recv(8)
-                if not frame_size_data:
+                if frame_size_data is None:
+                    print("Error: Failed to receive frame size.")
                     break
 
                 frame_size = struct.unpack("Q",frame_size_data)[0]
-                frame_data = b''
+                frame_data = b""
 
                 while len(frame_data) < frame_size:
                     packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
                     if not packet:
+                        print("Connection closed by server.")
                         break
 
                     frame_data += packet
 
                 if len(frame_data) != frame_size:
                     print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
-
+                    continue
                 try:
                     decompressed_data = zlib.decompress(frame_data)
                     np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
                     frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
+
+                    if frame is None:
+                        print("Error: Decoded frame is None (possibly corrupted).")
+                        continue
 
                     with self.lock:
                         self.received_frame[client_id] = frame
@@ -431,19 +432,30 @@ class Meeting():
     def display_recv_frame(self):
         try:
             with self.lock:
-                for client_id , frame in self.received_frame.items():
-                    if frame is not None:
-                        img = Image.fromarray(cv.cvtColor(frame,cv.COLOR_BGR2RGB)) 
-                        imgtk = ImageTk.PhotoImage(imgtk)
-                        self.recv_video_label.imgtk = imgtk
-                        self.recv_video_label.configure(image = imgtk)
+                received_clients = list(self.received_frame.keys())
+                labels = [self.recv_video_label,self.recv_video_label2,self.recv_video_label3]
 
+                for i in range(len(labels)):
+                    if i >= len(received_clients):
+                        labels[i].config(image= None)
+                
+                for i, client_id in enumerate(received_clients[:len(labels)]):
+                    frame = self.received_frame.get(client_id)
+
+                    if frame is not None:
+                        frame = cv.resize(frame,(470,430))
+                        img = Image.fromarray(cv.cvtColor(frame,cv.COLOR_BGR2RGB))
+                        imgtk = ImageTk.PhotoImage(img)
+
+                        labels[i].imgtk = imgtk
+                        labels[i].configure(image=imgtk)
                     else:
                         del self.received_frame[client_id]
         except Exception as e:
             print(f"Error in video loop: {e}")
         
         self.recv_video_label.after(10,self.display_recv_frame)
+                
     def send_audio(self):
         pass
 
@@ -461,7 +473,6 @@ class Meeting():
                 self.cap = None
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
-            self.video_thread.join()
             self.send_thread.join()
             self.recv_thread.join()
             self.Meeting_root.destroy()
@@ -480,7 +491,6 @@ class Meeting():
                 self.cap = None
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
-            self.video_thread.join()
             self.send_thread.join()
             self.recv_thread.join()
             self.Meeting_root.destroy()
@@ -540,21 +550,6 @@ def host_name_entry():
     HNE_Sumbit_btn = tb.Button(HNE_name_pop,text="CONNECT",bootstyle="info",command=lambda: meeting.Create_Meeting(HNE_name_entry.get()))
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
-
-def blank_frame(h,w):
-    global  recv_video_label, recv_video_label2, recv_video_label3
-    
-    blank = np.zeros((h,w),dtype='uint8')
-    img = Image.fromarray(blank)
-    imageTk = ImageTk.PhotoImage(img)
-    recv_video_label.imageTk = imageTk 
-    recv_video_label.configure(image=imageTk)
-
-    recv_video_label2.imageTk = imageTk 
-    recv_video_label2.configure(image=imageTk)
-
-    recv_video_label3.imageTk = imageTk 
-    recv_video_label3.configure(image=imageTk)
 
 app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
