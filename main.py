@@ -10,7 +10,7 @@ import struct
 import threading
 import numpy as np
 
-SERVER = ""
+SERVER = "192.168.29.12"
 PORT= 65432
 ADDR = (SERVER,PORT)
 
@@ -49,7 +49,7 @@ class Meeting():
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
 
-        self.Meeting_root = tb.Toplevel(title="meeting")
+        self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
         self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
@@ -383,16 +383,16 @@ class Meeting():
         try:
             while True:
                 client_id_data = self.client_socket.recv(4)
-                if client_id_data is None:
+                if not client_id_data or len(client_id_data) < 4:
                     print("Error: Failed to receive client ID.")
-                    break
+                    continue
 
                 client_id = struct.unpack("I",client_id_data)[0]
 
                 frame_size_data = self.client_socket.recv(8)
-                if frame_size_data is None:
+                if not frame_size_data or len(frame_size_data) < 8:
                     print("Error: Failed to receive frame size.")
-                    break
+                    continue
 
                 frame_size = struct.unpack("Q",frame_size_data)[0]
                 frame_data = b""
@@ -471,10 +471,12 @@ class Meeting():
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
+            if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
+                self.send_thread.join()
+            if not hasattr(self, 'recv_thread') or not self.send_thread.is_alive():
+                self.recv_thread.join()  
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
-            self.send_thread.join()
-            self.recv_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -486,13 +488,16 @@ class Meeting():
             #     self.cap = None
             # if self.client_socket:
             #     self.client_socket.close()
+            
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
+            if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
+                self.send_thread.join()
+            if not hasattr(self, 'recv_thread') or not self.send_thread.is_alive():
+                self.recv_thread.join()  
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
-            self.send_thread.join()
-            self.recv_thread.join()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
