@@ -9,10 +9,16 @@ import zlib
 import struct
 import threading
 import numpy as np
+import pyaudio
 
 SERVER = "192.168.29.12"
 PORT= 65432
 ADDR = (SERVER,PORT)
+
+A_FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 32000
+CHUNK = 256
 
 
 class Meeting():
@@ -33,6 +39,10 @@ class Meeting():
         self.lock = threading.Lock()
         self.cap = None
         self.client_socket = None
+
+        self.audio_stream = None
+        self.audio = pyaudio.PyAudio()
+
 
     def Create_Meeting(self,host_name):
 
@@ -451,16 +461,63 @@ class Meeting():
             print(f"Error in video loop: {e}")
         
         self.recv_video_label.after(10,self.display_recv_frame)
-                
+
+    def start_stop_audio(self):
+        if self.audio_variable.get():
+            if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
+                self.audio_thread.start()
+
+        else:
+            if self.audio_stream:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+                self.audio_stream = None
+                    
     def send_audio(self):
-        pass
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+
+        try:
+            while self.audio_variable.get():
+                data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                compressed_data = zlib.compress(data)
+
+                try:
+                    self.client_socket.sendall(struct.pack("Q",len(compressed_data))+ compressed_data)
+                except Exception as e:
+                    print(f"Audio send error: {e}")
+                    break
+        finally:
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
 
     def recv_audio(self):
-        pass
+        stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
 
+        try:
+            while True:
+                frame_size_data = self.client_socket.recv(8)
+                if not frame_size_data:
+                    break
+                frame_size = struct.unpack("Q", frame_size_data)[0]
+
+                frame_data = b""
+                while len(frame_data) < frame_size:
+                    packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
+                    if not packet:
+                        break
+                    frame_data += packet
+
+                decompressed_data = zlib.decompress(frame_data)
+                stream.write(decompressed_data)
+        except Exception as e:
+            print(f"Audio receive error: {e}")
+        finally:
+            stream.stop_stream()
+            stream.close()
+            
     def end_meeting(self,Close):
         if Close in "End all meeting":
-
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
@@ -475,7 +532,6 @@ class Meeting():
             btn2.config(state=NORMAL)
 
         if Close in "End meeting":
-            
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
