@@ -303,10 +303,6 @@ class Meeting():
                     self.cap = None
                     return
 
-                # if not hasattr(self, 'video_thread') or not self.video_thread.is_alive():
-                #     self.video_thread = threading.Thread(target=self.video_loop,daemon=True)
-                #     self.video_thread.start()
-
                 if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
                     self.send_thread = threading.Thread(target=self.send_video,daemon=True)
                     self.send_thread.start()
@@ -464,10 +460,7 @@ class Meeting():
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
-            # self.cap = None
-            # if self.cap:
-            #     self.cap.release() 
-            #     self.cap = None
+
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
@@ -482,12 +475,6 @@ class Meeting():
             btn2.config(state=NORMAL)
 
         if Close in "End meeting":
-            # self.cap = None
-            # if self.cap:
-            #     self.cap.release() 
-            #     self.cap = None
-            # if self.client_socket:
-            #     self.client_socket.close()
             
             if hasattr(self,'cap') and self.cap:
                 self.cap.release()
