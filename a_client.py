@@ -11,7 +11,7 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.12"
+SERVER = "192.168.29.224"
 PORT= 65432
 ADDR = (SERVER,PORT)
 
