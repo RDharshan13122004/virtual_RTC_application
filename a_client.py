@@ -396,49 +396,50 @@ class Meeting():
                 if not identifier:
                     break
 
-                if identifier == b"V":
-                    client_id_data = self.client_socket.recv(4)
-                    if not client_id_data or len(client_id_data) < 4:
-                        print("Error: Failed to receive client ID.")
+                if identifier != b"V":  # Ignore non-video packets
+                    continue
+                client_id_data = self.client_socket.recv(4)
+                if not client_id_data or len(client_id_data) < 4:
+                    print("Error: Failed to receive client ID.")
+                    continue
+
+                client_id = struct.unpack("I",client_id_data)[0]
+
+                frame_size_data = self.client_socket.recv(8)
+                if not frame_size_data or len(frame_size_data) < 8:
+                    print("Error: Failed to receive frame size.")
+                    continue
+
+                frame_size = struct.unpack("Q",frame_size_data)[0]
+                frame_data = b""
+
+                while len(frame_data) < frame_size:
+                    packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
+                    if not packet:
+                        print("Connection closed by server.")
+                        break
+
+                    frame_data += packet
+
+                if len(frame_data) != frame_size:
+                    print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
+                    continue
+                try:
+                    decompressed_data = zlib.decompress(frame_data)
+                    np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
+                    frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
+
+                    if frame is None:
+                        print("Error: Decoded frame is None (possibly corrupted).")
                         continue
 
-                    client_id = struct.unpack("I",client_id_data)[0]
+                    with self.lock:
+                        self.received_frame[client_id] = frame
 
-                    frame_size_data = self.client_socket.recv(8)
-                    if not frame_size_data or len(frame_size_data) < 8:
-                        print("Error: Failed to receive frame size.")
-                        continue
-
-                    frame_size = struct.unpack("Q",frame_size_data)[0]
-                    frame_data = b""
-
-                    while len(frame_data) < frame_size:
-                        packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
-                        if not packet:
-                            print("Connection closed by server.")
-                            break
-
-                        frame_data += packet
-
-                    if len(frame_data) != frame_size:
-                        print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
-                        continue
-                    try:
-                        decompressed_data = zlib.decompress(frame_data)
-                        np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
-                        frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
-
-                        if frame is None:
-                            print("Error: Decoded frame is None (possibly corrupted).")
-                            continue
-
-                        with self.lock:
-                            self.received_frame[client_id] = frame
-
-                    except zlib.error as e:
-                        print(f"Decompression error: {e}")
-                    except Exception as e:
-                        print(f"Error in decoding frame: {e}")
+                except zlib.error as e:
+                    print(f"Decompression error: {e}")
+                except Exception as e:
+                    print(f"Error in decoding frame: {e}")
         except Exception as e:
             print(f"Error on receving data: {e}")
         finally:
@@ -509,21 +510,22 @@ class Meeting():
                 if not identifier:
                     break
 
-                if identifier == b"A": 
-                    frame_size_data = self.client_socket.recv(8)
-                    if not frame_size_data:
+                if identifier != b"A": 
+                    continue
+                frame_size_data = self.client_socket.recv(8)
+                if not frame_size_data:
+                    break
+                frame_size = struct.unpack("Q", frame_size_data)[0]
+
+                frame_data = b""
+                while len(frame_data) < frame_size:
+                    packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
+                    if not packet:
                         break
-                    frame_size = struct.unpack("Q", frame_size_data)[0]
+                    frame_data += packet
 
-                    frame_data = b""
-                    while len(frame_data) < frame_size:
-                        packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
-                        if not packet:
-                            break
-                        frame_data += packet
-
-                    decompressed_data = zlib.decompress(frame_data)
-                    stream.write(decompressed_data)
+                decompressed_data = zlib.decompress(frame_data)
+                stream.write(decompressed_data)
         except Exception as e:
             print(f"Audio receive error: {e}")
         finally:
