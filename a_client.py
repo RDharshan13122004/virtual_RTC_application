@@ -11,7 +11,7 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.12"
+SERVER = "192.168.29.224"
 PORT= 65432
 ADDR = (SERVER,PORT)
 
@@ -23,15 +23,15 @@ CHUNK = 256
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("img/video-camera.png")
+        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("img/audio.png")
+        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("img/information.png")
+        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -60,7 +60,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
         self.name = host_name
@@ -185,6 +185,9 @@ class Meeting():
         self.grid_thread = threading.Thread(target=self.display_recv_frame,daemon=True)
         self.grid_thread.start()
 
+        self.Arecv_thread = threading.Thread(target=self.recv_audio,daemon= True)
+        self.Arecv_thread.start()
+
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
         
@@ -196,7 +199,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
         self.name = part_name
@@ -377,7 +380,7 @@ class Meeting():
                 
                 frame_size = len(compressed_data)
                 try:
-                    self.client_socket.sendall(struct.pack("Q",frame_size) + compressed_data)
+                    self.client_socket.sendall(b"V" + struct.pack("Q",frame_size) + compressed_data)
                 except Exception as e:
                     print(f"Error on sending data:{e}")
                     break
@@ -388,48 +391,54 @@ class Meeting():
     def recv_video(self):
         try:
             while True:
-                client_id_data = self.client_socket.recv(4)
-                if not client_id_data or len(client_id_data) < 4:
-                    print("Error: Failed to receive client ID.")
-                    continue
 
-                client_id = struct.unpack("I",client_id_data)[0]
+                identifier = self.client_socket.recv(1)
+                if not identifier:
+                    break
 
-                frame_size_data = self.client_socket.recv(8)
-                if not frame_size_data or len(frame_size_data) < 8:
-                    print("Error: Failed to receive frame size.")
-                    continue
-
-                frame_size = struct.unpack("Q",frame_size_data)[0]
-                frame_data = b""
-
-                while len(frame_data) < frame_size:
-                    packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
-                    if not packet:
-                        print("Connection closed by server.")
-                        break
-
-                    frame_data += packet
-
-                if len(frame_data) != frame_size:
-                    print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
-                    continue
-                try:
-                    decompressed_data = zlib.decompress(frame_data)
-                    np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
-                    frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
-
-                    if frame is None:
-                        print("Error: Decoded frame is None (possibly corrupted).")
+                if identifier == b"V":
+                    client_id_data = self.client_socket.recv(4)
+                    if not client_id_data or len(client_id_data) < 4:
+                        print("Error: Failed to receive client ID.")
                         continue
 
-                    with self.lock:
-                        self.received_frame[client_id] = frame
+                    client_id = struct.unpack("I",client_id_data)[0]
 
-                except zlib.error as e:
-                    print(f"Decompression error: {e}")
-                except Exception as e:
-                    print(f"Error in decoding frame: {e}")
+                    frame_size_data = self.client_socket.recv(8)
+                    if not frame_size_data or len(frame_size_data) < 8:
+                        print("Error: Failed to receive frame size.")
+                        continue
+
+                    frame_size = struct.unpack("Q",frame_size_data)[0]
+                    frame_data = b""
+
+                    while len(frame_data) < frame_size:
+                        packet = self.client_socket.recv(min(frame_size - len(frame_data),4096))
+                        if not packet:
+                            print("Connection closed by server.")
+                            break
+
+                        frame_data += packet
+
+                    if len(frame_data) != frame_size:
+                        print(f"Incomplete frame received. Excepted: {frame_size}, Received: {len(frame_data)} ")
+                        continue
+                    try:
+                        decompressed_data = zlib.decompress(frame_data)
+                        np_data = np.frombuffer(decompressed_data,dtype=np.uint8)
+                        frame = cv.imdecode(np_data,cv.IMREAD_COLOR)
+
+                        if frame is None:
+                            print("Error: Decoded frame is None (possibly corrupted).")
+                            continue
+
+                        with self.lock:
+                            self.received_frame[client_id] = frame
+
+                    except zlib.error as e:
+                        print(f"Decompression error: {e}")
+                    except Exception as e:
+                        print(f"Error in decoding frame: {e}")
         except Exception as e:
             print(f"Error on receving data: {e}")
         finally:
@@ -483,7 +492,7 @@ class Meeting():
                 compressed_data = zlib.compress(data)
 
                 try:
-                    self.client_socket.sendall(struct.pack("Q",len(compressed_data))+ compressed_data)
+                    self.client_socket.sendall(b"A" + struct.pack("Q",len(compressed_data))+ compressed_data)
                 except Exception as e:
                     print(f"Audio send error: {e}")
                     break
@@ -496,26 +505,31 @@ class Meeting():
 
         try:
             while True:
-                frame_size_data = self.client_socket.recv(8)
-                if not frame_size_data:
+                identifier = self.client_socket.recv(1)
+                if not identifier:
                     break
-                frame_size = struct.unpack("Q", frame_size_data)[0]
 
-                frame_data = b""
-                while len(frame_data) < frame_size:
-                    packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
-                    if not packet:
+                if identifier == b"A": 
+                    frame_size_data = self.client_socket.recv(8)
+                    if not frame_size_data:
                         break
-                    frame_data += packet
+                    frame_size = struct.unpack("Q", frame_size_data)[0]
 
-                decompressed_data = zlib.decompress(frame_data)
-                stream.write(decompressed_data)
+                    frame_data = b""
+                    while len(frame_data) < frame_size:
+                        packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
+                        if not packet:
+                            break
+                        frame_data += packet
+
+                    decompressed_data = zlib.decompress(frame_data)
+                    stream.write(decompressed_data)
         except Exception as e:
             print(f"Audio receive error: {e}")
         finally:
             stream.stop_stream()
             stream.close()
-            
+
     def end_meeting(self,Close):
         if Close in "End all meeting":
             if hasattr(self,'cap') and self.cap:
@@ -548,7 +562,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("img/ppico.ico")
+root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
 #Meeting obj
 
@@ -560,7 +574,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("img/ppico.ico")
+    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -588,7 +602,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("img/ppico.ico")
+    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -599,11 +613,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("img/video-camera.png") #type: ignore
+app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("img/add.png") #type: ignore
+app_icon2 = Image.open("final_year_project/img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
