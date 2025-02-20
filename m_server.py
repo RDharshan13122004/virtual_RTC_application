@@ -7,7 +7,7 @@ import numpy as np
 
 SERVER = socket.gethostbyname(socket.gethostname())
 V_PORT = 65432
-A_PORT = 68889
+A_PORT = 50000
 V_ADDR = (SERVER,V_PORT)
 A_ADDR = (SERVER,A_PORT)
 
@@ -28,9 +28,9 @@ def mix_audio(audio_data_list):
     min_length = min(len(arr) for arr in audio_arrays)
     audio_arrays = [arr[:min_length] for arr in audio_arrays]
 
-    mixed_audio = np.mean(audio_arrays, axis=0).astypes(np.int16)
+    mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)
 
-    return mix_audio.tobytes()
+    return mixed_audio.tobytes()
 
 def video_stream_handler(vid_client_socket,client_assign_id):
     global V_clients
@@ -40,7 +40,7 @@ def video_stream_handler(vid_client_socket,client_assign_id):
             if not frame_size_data:
                 break
 
-        frame_size = struct.unpack(frame_size_data)[0]
+        frame_size = struct.unpack("Q",frame_size_data)[0]
         frame_data = b""
 
         while len(frame_data) < frame_size:
@@ -51,7 +51,7 @@ def video_stream_handler(vid_client_socket,client_assign_id):
             frame_data += packet
 
             try:
-                decompressed_data = zlib.compress(frame_data)
+                decompressed_data = zlib.decompress(frame_data)
             except zlib.error as e:
                 continue
         

@@ -11,9 +11,9 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.224"
+SERVER = "192.168.29.12"
 V_PORT = 65432
-A_PORT = 66668 
+A_PORT = 50000 
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
@@ -393,7 +393,7 @@ class Meeting():
                 
                 frame_size = len(compressed_data)
                 try:
-                    self.client_socket.sendall(b"V" + struct.pack("Q",frame_size) + compressed_data)
+                    self.client_socket.sendall(struct.pack("Q",frame_size) + compressed_data)
                 except Exception as e:
                     print(f"Error on sending data:{e}")
                     break
@@ -404,13 +404,6 @@ class Meeting():
     def recv_video(self):
         try:
             while True:
-
-                identifier = self.client_socket.recv(1)
-                if not identifier:
-                    break
-
-                if identifier != b"V":  # Ignore non-video packets
-                    continue
                 client_id_data = self.client_socket.recv(4)
                 if not client_id_data or len(client_id_data) < 4:
                     print("Error: Failed to receive client ID.")
