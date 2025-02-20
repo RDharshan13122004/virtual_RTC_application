@@ -7,7 +7,7 @@ import numpy as np
 
 SERVER = socket.gethostbyname(socket.gethostname())
 V_PORT = 65432
-A_PORT = 68889
+A_PORT = 50000
 V_ADDR = (SERVER,V_PORT)
 A_ADDR = (SERVER,A_PORT)
 
@@ -30,7 +30,7 @@ def mix_audio(audio_data_list):
 
     mixed_audio = np.mean(audio_arrays, axis=0).astypes(np.int16)
 
-    return mix_audio.tobytes()
+    return mixed_audio.tobytes()
 
 def video_stream_handler(vid_client_socket,client_assign_id):
     global V_clients
