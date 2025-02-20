@@ -2,144 +2,150 @@ import socket
 import threading
 import struct
 import zlib
+import pyaudio
+import numpy as np
 
 SERVER = socket.gethostbyname(socket.gethostname())
-PORT = 65432
-ADDR = (SERVER, PORT)
+V_PORT = 65432
+A_PORT = 68889
+V_ADDR = (SERVER,V_PORT)
+A_ADDR = (SERVER,A_PORT)
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind(ADDR)
-server.listen(5)
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 32000
+CHUNK = 256 
 
-clients = {}
+V_clients:dict = {}
+A_clients:dict = {}
 lock = threading.Lock()
 
+def mix_audio(audio_data_list):
+    if not audio_data_list:
+        return b'\x00' * CHUNK * 2
+    
+    audio_arrays = [np.frombuffer(data, dtype=np.int16).astype(np.float32) for data in audio_data_list]
+    min_length = min(len(arr) for arr in audio_arrays)
+    audio_arrays = [arr[:min_length] for arr in audio_arrays]
 
-def recv_video(client_socket, client_id):
-    """Handles video data from client."""
+    mixed_audio = np.mean(audio_arrays, axis=0).astypes(np.int16)
+
+    return mix_audio.tobytes()
+
+def video_stream_handler(vid_client_socket,client_assign_id):
+    global V_clients
     try:
         while True:
-            identifier = client_socket.recv(1)
-            if not identifier:
+            frame_size_data = vid_client_socket.recv(8)
+            if not frame_size_data:
                 break
 
-            if identifier != b"V":
-                continue  # Ignore non-video packets
+        frame_size = struct.unpack(frame_size_data)[0]
+        frame_data = b""
 
-            data_size = client_socket.recv(8)
-            if not data_size:
+        while len(frame_data) < frame_size:
+            packet = vid_client_socket.recv(min(frame_size - len(frame_data), 4096))
+            if not packet:
                 break
 
-            data_size = struct.unpack("Q", data_size)[0]
-            data = b""
-
-            while len(data) < data_size:
-                packet = client_socket.recv(min(data_size - len(data), 4096))
-                if not packet:
-                    break
-                data += packet
+            frame_data += packet
 
             try:
-                decompressed_data = zlib.decompress(data)
-            except zlib.error:
-                continue  # Ignore corrupted frames
+                decompressed_data = zlib.compress(frame_data)
+            except zlib.error as e:
+                continue
+        
+        with lock:
+            for other_client_id, other_client_socket in V_clients.items():
+                if other_client_socket != vid_client_socket:
+                    try: 
+                        compressed_data = zlib.compress(decompressed_data)
+                        compressed_data_size = len(compressed_data)
 
-            with lock:
-                for other_client_id, other_client_socket in clients.items():
-                    if other_client_socket != client_socket:
-                        try:
-                            other_client_socket.sendall(
-                                b"V" +
-                                struct.pack("I", client_id) +
-                                struct.pack("Q", len(data)) +
-                                data
-                            )
-                        except Exception as e:
-                            print(f"Error sending video to client {other_client_id}: {e}")
+                        other_client_socket.sendall(
+                            struct.pack("I", client_assign_id) +
+                            struct.pack("Q", compressed_data_size) +
+                            compressed_data
+                        )
+                    except Exception as e:
+                        print(f"error sending data to client {other_client_socket}: {e}")
 
     except Exception as e:
-        print(f"Error in video handling for client {client_id}: {e}")
+        print(f"Error with client {client_assign_id}: {e}")
     finally:
         with lock:
-            if client_id in clients:
-                del clients[client_id]
-            client_socket.close()
+            if client_assign_id in V_clients:
+                del V_clients[client_assign_id]
+            vid_client_socket.close()
 
-
-def recv_audio(client_socket, client_id):
-    """Handles audio data from client."""
+def audio_stream_handler(aud_client_socket,client_assign_id):
     try:
         while True:
-            identifier = client_socket.recv(1)
-            if not identifier:
+            data = aud_client_socket.recv(CHUNK * 2)
+            if not data:
                 break
-
-            if identifier != b"A":
-                continue  # Ignore non-audio packets
-
-            data_size = client_socket.recv(8)
-            if not data_size:
-                break
-
-            data_size = struct.unpack("Q", data_size)[0]
-            data = b""
-
-            while len(data) < data_size:
-                packet = client_socket.recv(min(data_size - len(data), 4096))
-                if not packet:
-                    break
-                data += packet
-
+            
             with lock:
-                for other_client_id, other_client_socket in clients.items():
-                    if other_client_socket != client_socket:
+                other_audio = [d for c, d in A_clients.items() if c != client_assign_id]
+                mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
+                
+                for other_client_id, other_client_socket in A_clients.items():
+                    if other_client_id != client_assign_id:
                         try:
-                            other_client_socket.sendall(b"A" + struct.pack("Q", data_size) + data)
-                        except Exception as e:
-                            print(f"Error sending audio to client {other_client_id}: {e}")
-
+                            other_client_socket.sendall(mixed_audio)
+                        except:
+                            with lock:
+                                del A_clients[other_client_id]
+                            other_client_socket.close()
     except Exception as e:
-        print(f"Error in audio handling for client {client_id}: {e}")
+        print(f"Audio error with client {client_assign_id}: {e}")
     finally:
         with lock:
-            if client_id in clients:
-                del clients[client_id]
-            client_socket.close()
-
-
-def handle_client(client_socket, client_id):
-    """Starts separate threads for video and audio."""
-    video_thread = threading.Thread(target=recv_video, args=(client_socket, client_id), daemon=True)
-    audio_thread = threading.Thread(target=recv_audio, args=(client_socket, client_id), daemon=True)
-
-    video_thread.start()
-    audio_thread.start()
-
-    video_thread.join()
-    audio_thread.join()
+            if client_assign_id in A_clients:
+                del A_clients[client_assign_id]
+        aud_client_socket.close()
 
 
 def start_server():
-    """Accepts new client connections."""
+    video_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    video_server.bind(V_ADDR)
+    video_server.listen(5)
+    print(f"Video Server started on port {V_PORT}")
+
+    audio_server = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    audio_server.bind(A_ADDR)
+    audio_server.listen(5)
+    print(f"Audio Server started on port {A_PORT}")
+
     client_counter_id = 0
+
     try:
         while True:
-            client_socket, addr = server.accept()
-            print(f"New Connection: {addr}")
+            vid_client, vid_addr = video_server.accept()
+            aud_client, aud_addr = audio_server.accept()
+
+            print(f"NEW Video Connection : {vid_addr}")
+            print(f"New Audio Connection : {aud_addr}")
+
             client_counter_id += 1
+
             with lock:
-                clients[client_counter_id] = client_socket
+                V_clients[client_counter_id] = vid_client
+                A_clients[client_counter_id] = aud_client
 
-            threading.Thread(target=handle_client, args=(client_socket, client_counter_id), daemon=True).start()
-
+            threading.Thread(target=video_stream_handler, args=(vid_client,client_counter_id), daemon = True).start()
+            threading.Thread(target=audio_stream_handler, args=(aud_client,client_counter_id), daemon = True).start()
+    
     except KeyboardInterrupt:
-        print("Server is shutting down...")
+        print("Server is shutting down ....")
     finally:
         with lock:
-            for client_socket in clients.values():
-                client_socket.close()
-        server.close()
+            for V_client_socket in V_clients.values():
+                V_client_socket.close()
 
+            for A_client_socket in A_clients.values():
+                A_client_socket.close()
 
-print(f"Server is listening on {SERVER}:{PORT}")
-start_server()
+if __name__ == "__main__":
+    print(f"SERVER listening om ...  {SERVER}")
+    start_server()
