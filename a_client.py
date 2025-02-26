@@ -12,8 +12,10 @@ import numpy as np
 import pyaudio
 
 SERVER = "192.168.29.224"
-PORT= 65432
-ADDR = (SERVER,PORT)
+V_PORT = 65432
+A_PORT = 50000
+VP_ADDR = (SERVER,V_PORT)
+AP_ADDR = (SERVER,A_PORT)
 
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -39,6 +41,7 @@ class Meeting():
         self.lock = threading.Lock()
         self.cap = None
         self.client_socket = None
+        self.audio_socket = None
 
         self.audio_stream = None
         self.audio = pyaudio.PyAudio()
@@ -50,11 +53,21 @@ class Meeting():
             try:
                 self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
                 self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                self.client_socket.connect(ADDR)
+                self.client_socket.connect(VP_ADDR)
                 print("Connect to server")
             except Exception as e:
                 print(f"Error connecting to server: {e}")
                 return
+            
+        if not hasattr(self, 'audio_socket') or self.audio_socket is None:
+            try:
+                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.audio_socket.connect(AP_ADDR)
+            except Exception as e:
+                print(f"Error connection to audio server: {e}")  
+                return          
+        
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
@@ -489,11 +502,9 @@ class Meeting():
 
         try:
             while self.audio_variable.get():
-                data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                compressed_data = zlib.compress(data)
-
                 try:
-                    self.client_socket.sendall(b"A" + struct.pack("Q",len(compressed_data))+ compressed_data)
+                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    self.audio_socket.sendall(data)
                 except Exception as e:
                     print(f"Audio send error: {e}")
                     break
@@ -503,34 +514,17 @@ class Meeting():
 
     def recv_audio(self):
         stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
-
-        try:
-            while True:
-                identifier = self.client_socket.recv(1)
-                if not identifier:
+        while True:
+            try:    
+                data = self.audio_socket.recv(CHUNK * 2)
+                if not data:
                     break
-
-                if identifier != b"A": 
-                    continue
-                frame_size_data = self.client_socket.recv(8)
-                if not frame_size_data:
-                    break
-                frame_size = struct.unpack("Q", frame_size_data)[0]
-
-                frame_data = b""
-                while len(frame_data) < frame_size:
-                    packet = self.client_socket.recv(min(frame_size - len(frame_data), 4096))
-                    if not packet:
-                        break
-                    frame_data += packet
-
-                decompressed_data = zlib.decompress(frame_data)
-                stream.write(decompressed_data)
-        except Exception as e:
-            print(f"Audio receive error: {e}")
-        finally:
-            stream.stop_stream()
-            stream.close()
+                stream.write(data)
+            except Exception as e:
+                print(f"Audio receive error: {e}")
+            finally:
+                stream.stop_stream()
+                stream.close()
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
@@ -539,10 +533,18 @@ class Meeting():
                 self.cap = None
             if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
                 self.send_thread.join()
-            if not hasattr(self, 'recv_thread') or not self.send_thread.is_alive():
+            if not hasattr(self, 'recv_thread') or not self.recv_thread.is_alive():
                 self.recv_thread.join()  
+            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_thread.join()
+            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
+                self.Arecv_thread.join() 
+            if not hasattr(self, 'grid_thread') or not self.grid_thread.is_alive():
+                self.grid_thread.join() 
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
+            if hasattr(self,'audio_socket') and self.audio_socket:
+                self.audio_socket.close()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -553,10 +555,18 @@ class Meeting():
                 self.cap = None
             if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
                 self.send_thread.join()
-            if not hasattr(self, 'recv_thread') or not self.send_thread.is_alive():
+            if not hasattr(self, 'recv_thread') or not self.recv_thread.is_alive():
                 self.recv_thread.join()  
+            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_thread.join()
+            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
+                self.Arecv_thread.join() 
+            if not hasattr(self, 'grid_thread') or not self.grid_thread.is_alive():
+                self.grid_thread.join() 
             if hasattr(self,'client_socket') and self.client_socket:
                 self.client_socket.close()
+            if hasattr(self,'audio_socket') and self.audio_socket:
+                self.audio_socket.close()
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
