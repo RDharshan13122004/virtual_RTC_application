@@ -40,8 +40,8 @@ def video_stream_handler(vid_client_socket,client_assign_id):
             if not frame_size_data:
                 break
 
-        frame_size = struct.unpack(frame_size_data)[0]
-        frame_data = b""
+            frame_size = struct.unpack(frame_size_data)[0]
+            frame_data = b""
 
             while len(frame_data) < frame_size:
                 packet = vid_client_socket.recv(min(frame_size - len(frame_data), 4096))
