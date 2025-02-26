@@ -11,9 +11,9 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.224"
+SERVER = "192.168.29.12"
 V_PORT = 65432
-A_PORT = 50000
+A_PORT = 66668 
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
@@ -49,24 +49,21 @@ class Meeting():
 
     def Create_Meeting(self,host_name):
 
-        if not hasattr(self, 'client_socket') or self.client_socket is None:
-            try:
-                self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        try:
+            if not hasattr(self, 'client_socket') or self.client_socket is None:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect(VP_ADDR)
-                print("Connect to server")
-            except Exception as e:
-                print(f"Error connecting to server: {e}")
-                return
-            
-        if not hasattr(self, 'audio_socket') or self.audio_socket is None:
-            try:
+                print("Connected to video server.")
+
+            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
                 self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.audio_socket.connect(AP_ADDR)
-            except Exception as e:
-                print(f"Error connection to audio server: {e}")  
-                return          
+                print("Connected to audio server.")
+        except Exception as e:
+            print(f"Error connecting to server: {e}")
+            return        
         
 
         if HNE_Sumbit_btn:
@@ -142,10 +139,13 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command = self.start_stop_audio
                               )
         
         menu2.add_radiobutton(label="Mute",
+                               variable= self.audio_variable,
+                               value= False,
                                background="#d4342b",
                                foreground="#f8dedd",
                                font=('Arial Rounded MT Bold',14)
@@ -192,14 +192,17 @@ class Meeting():
 
         self.update_blank_frame()
 
-        self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
-        self.recv_thread.start()
+        try:
+            self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
+            self.recv_thread.start()
 
-        self.grid_thread = threading.Thread(target=self.display_recv_frame,daemon=True)
-        self.grid_thread.start()
+            self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
+            self.grid_thread.start()
 
-        self.Arecv_thread = threading.Thread(target=self.recv_audio,daemon= True)
-        self.Arecv_thread.start()
+            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
+            self.Arecv_thread.start()
+        except Exception as e:
+            print(f"Error starting threads: {e}")
 
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
@@ -393,7 +396,7 @@ class Meeting():
                 
                 frame_size = len(compressed_data)
                 try:
-                    self.client_socket.sendall(b"V" + struct.pack("Q",frame_size) + compressed_data)
+                    self.client_socket.sendall(struct.pack("Q",frame_size) + compressed_data)
                 except Exception as e:
                     print(f"Error on sending data:{e}")
                     break
@@ -404,13 +407,6 @@ class Meeting():
     def recv_video(self):
         try:
             while True:
-
-                identifier = self.client_socket.recv(1)
-                if not identifier:
-                    break
-
-                if identifier != b"V":  # Ignore non-video packets
-                    continue
                 client_id_data = self.client_socket.recv(4)
                 if not client_id_data or len(client_id_data) < 4:
                     print("Error: Failed to receive client ID.")

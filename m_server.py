@@ -28,7 +28,7 @@ def mix_audio(audio_data_list):
     min_length = min(len(arr) for arr in audio_arrays)
     audio_arrays = [arr[:min_length] for arr in audio_arrays]
 
-    mixed_audio = np.mean(audio_arrays, axis=0).astypes(np.int16)
+    mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)
 
     return mixed_audio.tobytes()
 
@@ -40,35 +40,35 @@ def video_stream_handler(vid_client_socket,client_assign_id):
             if not frame_size_data:
                 break
 
-        frame_size = struct.unpack("Q",frame_size_data)[0]
+        frame_size = struct.unpack(frame_size_data)[0]
         frame_data = b""
 
-        while len(frame_data) < frame_size:
-            packet = vid_client_socket.recv(min(frame_size - len(frame_data), 4096))
-            if not packet:
-                break
+            while len(frame_data) < frame_size:
+                packet = vid_client_socket.recv(min(frame_size - len(frame_data), 4096))
+                if not packet:
+                    break
 
-            frame_data += packet
+                frame_data += packet
 
             try:
                 decompressed_data = zlib.decompress(frame_data)
             except zlib.error as e:
                 continue
-        
-        with lock:
-            for other_client_id, other_client_socket in V_clients.items():
-                if other_client_socket != vid_client_socket:
-                    try: 
-                        compressed_data = zlib.compress(decompressed_data)
-                        compressed_data_size = len(compressed_data)
+            
+            with lock:
+                for other_client_id, other_client_socket in V_clients.items():
+                    if other_client_socket != vid_client_socket:
+                        try: 
+                            compressed_data = zlib.compress(decompressed_data)
+                            compressed_data_size = len(compressed_data)
 
-                        other_client_socket.sendall(
-                            struct.pack("I", client_assign_id) +
-                            struct.pack("Q", compressed_data_size) +
-                            compressed_data
-                        )
-                    except Exception as e:
-                        print(f"error sending data to client {other_client_socket}: {e}")
+                            other_client_socket.sendall(
+                                struct.pack("I", client_assign_id) +
+                                struct.pack("Q", compressed_data_size) +
+                                compressed_data
+                            )
+                        except Exception as e:
+                            print(f"error sending data to client {other_client_socket}: {e}")
 
     except Exception as e:
         print(f"Error with client {client_assign_id}: {e}")
