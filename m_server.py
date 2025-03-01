@@ -98,16 +98,16 @@ def audio_stream_handler(aud_client_socket, client_assign_id):
                     other_audio = [audio_data_store[c] for c in audio_data_store if c != client_assign_id]
                     mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
 
-                    # Send mixed audio to all other clients
-                    for other_client_id in list(A_clients.keys()):  # Convert to list to prevent modification issues
+                    for other_client_id, other_client_socket in A_clients.items():
                         if other_client_id != client_assign_id:
                             try:
-                                A_clients[other_client_id].sendall(mixed_audio)
+                                print(f"📤 Sending {len(mixed_audio)} bytes to client {other_client_id}")
+                                other_client_socket.sendall(mixed_audio)
                             except Exception as e:
                                 print(f"❌ Audio send error to client {other_client_id}: {e}")
                                 with lock:
-                                    A_clients[other_client_id].close()
-                                    del A_clients[other_client_id]  # Safely remove client
+                                    del A_clients[other_client_id]
+                                other_client_socket.close()
             except socket.error as e:
                 print(f"🔴 Client {client_assign_id} disconnected from audio.")
                 break
