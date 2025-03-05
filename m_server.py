@@ -110,7 +110,7 @@ def audio_stream_handler():
                 else:
                     other_audio = list(audio_data_dict.values())
                 
-                mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
+                mixed_audio = mix_audio(other_audio) if other_audio else (list(audio_data_dict.values())[0] if audio_data_dict else b'\x00' * CHUNK * 2)
                 try:
                     client.sendall(mixed_audio)
                 except:
