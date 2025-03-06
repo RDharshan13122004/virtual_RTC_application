@@ -7,24 +7,25 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
+import select
 import threading
 import numpy as np
 import pyaudio
 
 SERVER = "192.168.29.12"
 V_PORT = 65432
-A_PORT = 50000
+A_PORT = 50000 
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 256
+CHUNK = 128
 
 
 class Meeting():
-    def __init__(self):
+    def _init_(self):
         self.video_image = Image.open("img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
@@ -488,37 +489,60 @@ class Meeting():
                 self.audio_thread.start()
 
         else:
-            if self.audio_stream:
+            if hasattr(self,'audio_stream') and self.audio_stream:
                 self.audio_stream.stop_stream()
                 self.audio_stream.close()
                 self.audio_stream = None
+
+            if hasattr(self, 'audio_socket') and self.audio_socket:
+                self.audio_socket.close()
+                self.audio_socket = None
                     
     def send_audio(self):
-        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
-
         try:
+            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
             while self.audio_variable.get():
                 try:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    self.audio_socket.sendall(data)
-                except Exception as e:
+                    if self.audio_socket:
+                        self.audio_socket.sendall(data)
+                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
                     print(f"Audio send error: {e}")
                     break
+        except Exception as e: 
+            print(f"❌ Error initializing audio stream: {e}")
         finally:
-            self.audio_stream.stop_stream()
-            self.audio_stream.close()
+            if hasattr(self, 'audio_stream') and self.audio_stream:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+                self.audio_stream = None
 
     def recv_audio(self):
-        stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
-        while True:
-            try:    
-                data = self.audio_socket.recv(CHUNK * 2)
-                if not data:
+        try:
+            stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+
+            while True:
+                try:
+                    if not self.audio_socket:
+                        break
+
+                    # 🔹 Use select() to check for data without blocking
+                    ready, _, _ = select.select([self.audio_socket], [], [], 0.1)
+                    if ready:
+                        data = self.audio_socket.recv(CHUNK * 2)
+                        if not data:
+                            break
+
+                        stream.write(data)  # 🔹 Always play incoming audio, regardless of mute status
+
+                except (socket.error, ConnectionResetError) as e:
+                    print(f"Audio receive error: {e}")
                     break
-                stream.write(data)
-            except Exception as e:
-                print(f"Audio receive error: {e}")
-            finally:
+
+        except Exception as e:
+            print(f"❌ Error initializing audio stream: {e}")
+        finally:
+            if stream:
                 stream.stop_stream()
                 stream.close()
 
