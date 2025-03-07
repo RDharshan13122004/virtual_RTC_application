@@ -7,6 +7,7 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
+import select
 import threading
 import numpy as np
 import pyaudio
@@ -20,7 +21,7 @@ AP_ADDR = (SERVER,A_PORT)
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 256
+CHUNK = 128
 
 
 class Meeting():
@@ -503,7 +504,8 @@ class Meeting():
             while self.audio_variable.get():
                 try:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    self.audio_socket.sendall(data)
+                    if self.audio_socket:
+                        self.audio_socket.sendall(data)
                 except (socket.error, BrokenPipeError, ConnectionResetError) as e:
                     print(f"Audio send error: {e}")
                     break
@@ -517,21 +519,32 @@ class Meeting():
 
     def recv_audio(self):
         try:
-            stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
+            stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+
             while True:
-                try:    
-                    data = self.audio_socket.recv(CHUNK * 2)
-                    if not data:
+                try:
+                    if not self.audio_socket:
                         break
-                    stream.write(data)
-                except (socket.error,ConnectionResetError) as e:
+
+                    # 🔹 Use select() to check for data without blocking
+                    ready, _, _ = select.select([self.audio_socket], [], [], 0.1)
+                    if ready:
+                        data = self.audio_socket.recv(CHUNK * 2)
+                        if not data:
+                            break
+
+                        stream.write(data)  # 🔹 Always play incoming audio, regardless of mute status
+
+                except (socket.error, ConnectionResetError) as e:
                     print(f"Audio receive error: {e}")
                     break
+
         except Exception as e:
             print(f"❌ Error initializing audio stream: {e}")
         finally:
-            stream.stop_stream()
-            stream.close()
+            if stream:
+                stream.stop_stream()
+                stream.close()
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
