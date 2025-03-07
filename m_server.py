@@ -3,6 +3,7 @@ import threading
 import struct
 import zlib
 import select
+import time
 import pyaudio
 import numpy as np
 
@@ -15,7 +16,7 @@ A_ADDR = (SERVER,A_PORT)
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 256 
+CHUNK = 128 
 
 V_clients:dict = {}
 A_clients:list = []
@@ -25,6 +26,9 @@ def mix_audio(audio_data_list):
     if not audio_data_list:
         return b'\x00' * CHUNK * 2
     
+    if len(audio_data_list) == 1:
+        return audio_data_list[0]
+
     audio_arrays = [np.frombuffer(data, dtype=np.int16).astype(np.float32) for data in audio_data_list]
     min_length = min(len(arr) for arr in audio_arrays)
     audio_arrays = [arr[:min_length] for arr in audio_arrays]
@@ -84,9 +88,15 @@ def audio_stream_handler():
     while True:
         with lock:
             if not A_clients:
+                time.sleep(0.01)
                 continue
 
-        readable, _, _ = select.select(A_clients, [], [], 0.01)
+        try:
+            readable, _, _ = select.select(A_clients, [], [], 0.01)
+        except Exception as e:
+            print(f"Error in select(): {e}")
+            continue
+
         audio_data_dict = {}
 
         for client in readable:
@@ -98,19 +108,20 @@ def audio_stream_handler():
                         client.close()       
                     continue
                 audio_data_dict[client] = data
-            except:
+            except Exception as e:
+                print(f"Error receiving audio data: {e}")
                 with lock:
                     A_clients.remove(client)
                 client.close()
         
         with lock:
-            for client in A_clients:
+            for client in A_clients.copy():
                 if client in audio_data_dict:
                     other_audio = [data for c, data in audio_data_dict.items() if c != client]
                 else:
                     other_audio = list(audio_data_dict.values())
                 
-                mixed_audio = mix_audio(other_audio) if other_audio else (list(audio_data_dict.values())[0] if audio_data_dict else b'\x00' * CHUNK * 2)
+                mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
                 try:
                     client.sendall(mixed_audio)
                 except:
@@ -156,7 +167,7 @@ def start_server():
             for V_client_socket in V_clients.values():
                 V_client_socket.close()
 
-            for A_client_socket in A_clients.values():
+            for A_client_socket in A_clients:
                 A_client_socket.close()
 
 if __name__ == "__main__":
