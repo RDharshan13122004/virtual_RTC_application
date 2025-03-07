@@ -25,7 +25,7 @@ CHUNK = 128
 
 
 class Meeting():
-    def _init_(self):
+    def __init__(self):
         self.video_image = Image.open("img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
