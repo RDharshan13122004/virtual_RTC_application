@@ -3,6 +3,7 @@ from tkinter import *
 import ttkbootstrap as tb #type: ignore
 import numpy as np
 from PIL import ImageTk, Image #type: ignore
+from ttkbootstrap.toast import ToastNotification
 from cv2 import *
 import cv2 as cv
 import zlib
@@ -55,15 +56,28 @@ class Meeting():
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect(VP_ADDR)
-                print("Connected to video server.")
+                #print("Connected to video server.")
 
             if not hasattr(self, 'audio_socket') or self.audio_socket is None:
                 self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.audio_socket.connect(AP_ADDR)
-                print("Connected to audio server.")
+                #print("Connected to audio server.")
+
+                toast = ToastNotification(title = "quak join",
+                                          message = "Meeting is started",
+                                          duration= 3000,
+                                          bootstyle = "success",
+                                          alert = True,
+                                          )
         except Exception as e:
-            print(f"Error connecting to server: {e}")
+            #print(f"Error connecting to server: {e}")
+            toast = ToastNotification(title = "quak join",
+                                          message = "Something went wrong",
+                                          duration= 3000,
+                                          bootstyle = "danger",
+                                          alert = True,
+                                          )
             return            
 
         if HNE_Sumbit_btn:
@@ -213,15 +227,29 @@ class Meeting():
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect((MC_SERVER_IP_entry.get(),V_PORT))
-                print("Connected to video server.")
+                #print("Connected to video server.")
 
             if not hasattr(self, 'audio_socket') or self.audio_socket is None:
                 self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.audio_socket.connect((MC_SERVER_IP_entry.get(),A_PORT))
-                print("Connected to audio server.")
+                #print("Connected to audio server.")
+
+                toast = ToastNotification(title = "quak join",
+                                          message = "Meeting is started",
+                                          duration= 3000,
+                                          bootstyle = "success",
+                                          alert = True,
+                                          )
+
         except Exception as e:
-            print(f"Error connecting to server: {e}")
+            #print(f"Error connecting to server: {e}")
+            toast = ToastNotification(title = "quak join",
+                                          message = "Something went wrong",
+                                          duration= 3000,
+                                          bootstyle = "danger",
+                                          alert = True,
+                                          )
             return
             
         if MC_Sumbit_btn:
