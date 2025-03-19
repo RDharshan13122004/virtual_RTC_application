@@ -26,15 +26,15 @@ CHUNK = 128
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("img/video-camera.png")
+        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("img/audio.png")
+        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("img/information.png")
+        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -64,15 +64,13 @@ class Meeting():
                 print("Connected to audio server.")
         except Exception as e:
             print(f"Error connecting to server: {e}")
-            return        
-        
+            return            
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")
-        
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")    
         
         self.name = host_name
 
@@ -84,7 +82,7 @@ class Meeting():
 
         info_btn = tb.Button(menus_frame,
                              image=self.info_image,
-                             #command=
+                             command= self.info_pop,
                              bootstyle = "success"
                              )
         info_btn.pack(pady=20,padx=30)
@@ -184,7 +182,6 @@ class Meeting():
         video_alignment_frame2 = tb.Frame(container_frame)
         video_alignment_frame2.pack(pady=5)
 
-
         self.recv_video_label2 = tb.Label(video_alignment_frame2)
         self.recv_video_label2.pack(pady=5,padx=5,side="left")
 
@@ -210,13 +207,30 @@ class Meeting():
         
 
     def connecting_meeting(self,part_name):
+
+        try:
+            if not hasattr(self, 'client_socket') or self.client_socket is None:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                self.client_socket.connect((MC_SERVER_IP_entry.get(),V_PORT))
+                print("Connected to video server.")
+
+            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
+                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.audio_socket.connect((MC_SERVER_IP_entry.get(),A_PORT))
+                print("Connected to audio server.")
+        except Exception as e:
+            print(f"Error connecting to server: {e}")
+            return
+            
         if MC_Sumbit_btn:
             con_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
         self.name = part_name
@@ -230,7 +244,7 @@ class Meeting():
 
         info_btn = tb.Button(menus_frame,
                              image= self.info_image,
-                             #command=
+                             command= self.info_pop,
                              bootstyle = "success"
                              )
         info_btn.pack(pady=10,padx=30)
@@ -318,9 +332,33 @@ class Meeting():
         self.recv_video_label3 = tb.Label(video_alignment_frame2)
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
 
+        self.update_blank_frame()
+
+        try:
+            self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
+            self.recv_thread.start()
+
+            self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
+            self.grid_thread.start()
+
+            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
+            self.Arecv_thread.start()
+        except Exception as e:
+            print(f"Error starting threads: {e}")
+
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
     
+    def info_pop(self):
+        self.info_pp = tb.Toplevel(title="",position=(0,0))
+        self.info_pp.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+
+        self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
+        self.info_server_id_label.pack(padx=10,pady=10)
+
+        self.info_meeting_password_label = tb.Label(self.info_pp,text=f"🔐: frgtyh",bootstyle= "success", font=("Rockwell Extra Bold",18))
+        self.info_meeting_password_label.pack(padx=10,pady=10)
+
     def start_stop_video(self):   
         if self.video_variable.get():
 
@@ -503,6 +541,9 @@ class Meeting():
             self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
             while self.audio_variable.get():
                 try:
+                    if not self.audio_socket or self.audio_socket.fileno() == -1:
+                        print("Socket closed, stopping audio transmission.")
+                    break
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
                     if self.audio_socket:
                         self.audio_socket.sendall(data)
@@ -523,7 +564,8 @@ class Meeting():
 
             while True:
                 try:
-                    if not self.audio_socket:
+                    if not self.audio_socket or self.audio_socket.fileno() == -1:
+                        print("Socket closed, stopping audio receiving.")
                         break
 
                     # 🔹 Use select() to check for data without blocking
@@ -565,6 +607,7 @@ class Meeting():
                 self.client_socket.close()
             if hasattr(self,'audio_socket') and self.audio_socket:
                 self.audio_socket.close()
+                self.audio_socket = None
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -587,6 +630,7 @@ class Meeting():
                 self.client_socket.close()
             if hasattr(self,'audio_socket') and self.audio_socket:
                 self.audio_socket.close()
+                self.audio_socket = None
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
@@ -594,7 +638,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("img/ppico.ico")
+root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
 #Meeting obj
 
@@ -603,10 +647,10 @@ meeting = Meeting()
 #function
 
 def connection_pop():
-    global con_pop, MC_Sumbit_btn
+    global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("img/ppico.ico")
+    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -634,7 +678,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("img/ppico.ico")
+    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -645,11 +689,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("img/video-camera.png") #type: ignore
+app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("img/add.png") #type: ignore
+app_icon2 = Image.open("final_year_project/img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
