@@ -39,6 +39,7 @@ class Meeting():
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
+        self.toast = None
         self.received_frame = {}
         self.lock = threading.Lock()
         self.cap = None
@@ -64,7 +65,7 @@ class Meeting():
                 self.audio_socket.connect(AP_ADDR)
                 #print("Connected to audio server.")
 
-                toast = ToastNotification(title = "quak join",
+                self.toast = ToastNotification(title = "quak join",
                                           message = "Meeting is started",
                                           duration= 3000,
                                           bootstyle = "success",
@@ -72,7 +73,7 @@ class Meeting():
                                           )
         except Exception as e:
             #print(f"Error connecting to server: {e}")
-            toast = ToastNotification(title = "quak join",
+            self.toast = ToastNotification(title = "quak join",
                                           message = "Something went wrong",
                                           duration= 3000,
                                           bootstyle = "danger",
@@ -161,7 +162,8 @@ class Meeting():
                                value= False,
                                background="#d4342b",
                                foreground="#f8dedd",
-                               font=('Arial Rounded MT Bold',14)
+                               font=('Arial Rounded MT Bold',14),
+                               command = self.start_stop_audio
                                )
         
         close_menu = tb.Menu(Close_meeting, tearoff=0)
@@ -235,7 +237,7 @@ class Meeting():
                 self.audio_socket.connect((MC_SERVER_IP_entry.get(),A_PORT))
                 #print("Connected to audio server.")
 
-                toast = ToastNotification(title = "quak join",
+                self.toast = ToastNotification(title = "quak join",
                                           message = "Meeting is started",
                                           duration= 3000,
                                           bootstyle = "success",
@@ -244,7 +246,7 @@ class Meeting():
 
         except Exception as e:
             #print(f"Error connecting to server: {e}")
-            toast = ToastNotification(title = "quak join",
+            self.toast = ToastNotification(title = "quak join",
                                           message = "Something went wrong",
                                           duration= 3000,
                                           bootstyle = "danger",
@@ -301,7 +303,8 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command= self.start_stop_video
                               )
 
         menu1.add_radiobutton(label="Off",
@@ -309,7 +312,8 @@ class Meeting():
                               value= False,
                               background="#d4342b",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command= self.start_stop_video
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
@@ -318,13 +322,17 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command = self.start_stop_audio
                               )
         
         menu2.add_radiobutton(label="Mute",
+                               variable= self.audio_variable,
+                               value= False,
                                background="#d4342b",
                                foreground="#f8dedd",
-                               font=('Arial Rounded MT Bold',14)
+                               font=('Arial Rounded MT Bold',14),
+                               command = self.start_stop_audio
                                )
         
         style = tb.Style()
