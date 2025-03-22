@@ -4,6 +4,7 @@ import struct
 import zlib
 import time
 import av
+import io
 import select
 import pyaudio
 import numpy as np
