@@ -8,7 +8,7 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import select
+import pickle
 import threading
 import numpy as np
 import pyaudio
@@ -569,18 +569,25 @@ class Meeting():
                 self.audio_stream = None
                     
     def send_audio(self):
+        """Captures and sends audio data serialized with pickle."""
         try:
-            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+            
             while self.audio_variable.get():
                 try:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    packed_data = pickle.dumps(data)  # Serialize data
+
                     if self.audio_socket:
-                        self.audio_socket.sendall(data)
+                        self.audio_socket.sendall(packed_data)
+
                 except (socket.error, BrokenPipeError, ConnectionResetError) as e:
                     print(f"Audio send error: {e}")
                     break
-        except Exception as e: 
+
+        except Exception as e:
             print(f"❌ Error initializing audio stream: {e}")
+
         finally:
             if hasattr(self, 'audio_stream') and self.audio_stream:
                 self.audio_stream.stop_stream()
@@ -588,22 +595,18 @@ class Meeting():
                 self.audio_stream = None
 
     def recv_audio(self):
+        """Receives and plays back audio data using pickle deserialization."""
         try:
             stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
 
             while True:
                 try:
-                    if not self.audio_socket:
+                    data = self.audio_socket.recv(4096)  # Increase buffer size for serialized data
+                    if not data:
                         break
 
-                    # 🔹 Use select() to check for data without blocking
-                    ready, _, _ = select.select([self.audio_socket], [], [], 0.1)
-                    if ready:
-                        data = self.audio_socket.recv(CHUNK * 2)
-                        if not data:
-                            break
-
-                        stream.write(data)  # 🔹 Always play incoming audio, regardless of mute status
+                    unpacked_data = pickle.loads(data)  # Deserialize audio data
+                    stream.write(unpacked_data)
 
                 except (socket.error, ConnectionResetError) as e:
                     print(f"Audio receive error: {e}")
@@ -611,6 +614,7 @@ class Meeting():
 
         except Exception as e:
             print(f"❌ Error initializing audio stream: {e}")
+
         finally:
             if stream:
                 stream.stop_stream()
@@ -758,3 +762,4 @@ btn2_label = tb.Label(inter_frame2,text="join a meeting",font=("Rockwell Extra B
 btn2_label.pack(padx=35,pady=10,side="left")
 
 root.mainloop()
+
