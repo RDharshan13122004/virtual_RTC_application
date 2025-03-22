@@ -4,6 +4,7 @@ import struct
 import zlib
 import time
 import av
+import io
 import select
 import pyaudio
 import numpy as np
@@ -27,13 +28,17 @@ lock = threading.Lock()
 
 def encode_audio(audio_data):
     """Compress PCM audio using Opus codec."""
-    container = av.open(None, format='ogg', mode='w')
-    stream = container.add_stream('opus', RATE)
-    
+    buffer = io.BytesIO()  # Use an in-memory buffer
+    container = av.open(buffer, format='ogg', mode='w')
+    stream = container.add_stream('opus', rate=32000)
+
     frame = av.AudioFrame.from_ndarray(np.frombuffer(audio_data, dtype=np.int16), format='s16', layout='mono')
     packet = stream.encode(frame)
-    
-    return packet.to_bytes() if packet else b''
+
+    container.mux(packet)  # Write packet to buffer
+    container.close()
+
+    return buffer.getvalue() if packet else b''
 
 def decode_audio(compressed_audio):
     """Decompress Opus audio back to PCM."""
