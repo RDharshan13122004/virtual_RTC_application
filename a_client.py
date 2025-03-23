@@ -8,7 +8,6 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import pickle
 import threading
 import numpy as np
 import pyaudio
@@ -22,7 +21,7 @@ AP_ADDR = (SERVER,A_PORT)
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 128
+CHUNK = 64
 
 
 class Meeting():
@@ -557,82 +556,67 @@ class Meeting():
         self.recv_video_label.after(10,self.display_recv_frame)
 
     def start_stop_audio(self):
-        if self.audio_variable.get():
-            if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
+        """Toggles audio On/Off without closing the socket."""
+        if self.audio_variable.get():  # Audio ON
+            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_active = True  # Set flag to keep sending
                 self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
                 self.audio_thread.start()
-
-        else:
-            if hasattr(self,'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None                  
-                    
-    def send_audio(self):
-        """Captures and sends audio data with a length prefix."""
-        try:
-            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-
-            while self.audio_variable.get():
-                try:
-                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    packed_data = pickle.dumps(data)
-                    
-                    # Prefix the data with its length (4 bytes)
-                    message = struct.pack("!I", len(packed_data)) + packed_data
-
-                    if self.audio_socket:
-                        self.audio_socket.sendall(message)
-
-                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
-                    print(f"Audio send error: {e}")
-                    break
-
-        except Exception as e:
-            print(f"❌ Error initializing audio stream: {e}")
-
-        finally:
+        else:  # Audio OFF
+            self.audio_active = False  # Stop sending but keep socket open
             if hasattr(self, 'audio_stream') and self.audio_stream:
                 self.audio_stream.stop_stream()
                 self.audio_stream.close()
-                self.audio_stream = None
+                self.audio_stream = None  # Free the stream but keep socket open
 
-    def recv_audio(self):
-        """Receives and plays audio using structured data."""
+    def send_audio(self):
+        """Handles audio transmission."""
         try:
-            stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
-
-            while True:
+            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
+                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.audio_socket.connect(AP_ADDR)  # Reconnect if needed
+            
+            self.audio_stream = self.audio.open(
+                format=A_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+            )
+            
+            while self.audio_active:  # Check flag instead of variable.get()
                 try:
-                    # Read first 4 bytes to get data length
-                    data_length = self.audio_socket.recv(4)
-                    if not data_length:
-                        break
-
-                    data_size = struct.unpack("!I", data_length)[0]
-                    data = b""
-
-                    # Read the complete expected data
-                    while len(data) < data_size:
-                        packet = self.audio_socket.recv(data_size - len(data))
-                        if not packet:
-                            break
-                        data += packet
-
-                    unpacked_data = pickle.loads(data)  # Deserialize audio data
-                    stream.write(unpacked_data)
-
-                except (socket.error, ConnectionResetError) as e:
-                    print(f"Audio receive error: {e}")
+                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    self.audio_socket.sendall(data)  # Send if socket is still active
+                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
+                    print(f"Audio send error: {e}")
                     break
-
         except Exception as e:
             print(f"❌ Error initializing audio stream: {e}")
-
         finally:
-            if stream:
-                stream.stop_stream()
-                stream.close()
+            self.cleanup_audio()
+
+    def cleanup_audio(self):
+        """Stops the audio stream but keeps the socket open."""
+        if hasattr(self, 'audio_stream') and self.audio_stream:
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
+            self.audio_stream = None
+
+
+    def recv_audio(self):
+        try:
+            stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
+            while True:
+                try:    
+                    data = self.audio_socket.recv(CHUNK * 2)
+                    if not data:
+                        break
+                    stream.write(data)
+                except (socket.error,ConnectionResetError) as e:
+                    print(f"Audio receive error: {e}")
+                    break
+        except Exception as e:
+            print(f"❌ Error initializing audio stream: {e}")
+        finally:
+            stream.stop_stream()
+            stream.close()
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
