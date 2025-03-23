@@ -21,20 +21,20 @@ AP_ADDR = (SERVER,A_PORT)
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 64
+CHUNK = 128
 
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
+        self.video_image = Image.open("img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
+        self.audio_image = Image.open("img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
+        self.info_image = Image.open("img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -83,7 +83,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")    
+        self.Meeting_root.iconbitmap("img/ppico.ico")    
         
         self.name = host_name
 
@@ -258,7 +258,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+        self.Meeting_root.iconbitmap("img/ppico.ico")
         
         
         self.name = part_name
@@ -385,7 +385,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+        self.info_pp.iconbitmap("img/ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -566,20 +566,21 @@ class Meeting():
                 self.audio_stream.close()
                 self.audio_stream = None
 
-    def mu_law_encode(self,audio_data, quantization_channels=256):
-        """μ-law encoding for audio compression."""
-        mu = quantization_channels - 1
-        audio_data = np.sign(audio_data) * np.log1p(mu * np.abs(audio_data)) / np.log1p(mu)
-        encoded = ((audio_data + 1) / 2 * mu + 0.5).astype(np.uint8)
-        return encoded.tobytes()
+    def adpcm_encode(self,audio_data):
+        """Encodes 16-bit PCM audio to 4-bit ADPCM."""
+        step = 7
+        encoded_audio = []
+        prev_sample = 0
 
-    def mu_law_decode(self,encoded_audio, quantization_channels=256):
-        """μ-law decoding to restore audio."""
-        mu = quantization_channels - 1
-        encoded_audio = np.frombuffer(encoded_audio, dtype=np.uint8).astype(np.float32)
-        decoded = (encoded_audio / mu) * 2 - 1
-        audio_data = np.sign(decoded) * (1 / mu) * ((1 + mu) ** np.abs(decoded) - 1)
-        return (audio_data * 32767).astype(np.int16).tobytes()
+        for sample in np.frombuffer(audio_data, dtype=np.int16):
+            diff = sample - prev_sample
+            step_index = diff // step
+            step_index = max(-8, min(7, step_index))  # Keep within 4-bit range
+            
+            prev_sample += step_index * step
+            encoded_audio.append(step_index & 0xF)  # Store 4-bit values
+
+        return struct.pack(f'{len(encoded_audio)}B', *encoded_audio)
 
     def send_audio(self):
         try:
@@ -587,8 +588,7 @@ class Meeting():
             while self.audio_variable.get():
                 try:
                     raw_data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    pcm_data = np.frombuffer(raw_data, dtype=np.int16)
-                    compressed_data = self.mu_law_encode(pcm_data)  # Compress
+                    compressed_data = self.adpcm_encode(raw_data)  # Compress using ADPCM
                     self.audio_socket.sendall(compressed_data)
                 except (socket.error, BrokenPipeError, ConnectionResetError) as e:
                     print(f"Audio send error: {e}")
@@ -600,16 +600,31 @@ class Meeting():
                 self.audio_stream.stop_stream()
                 self.audio_stream.close()
                 self.audio_stream = None
+    
+    def adpcm_decode(self,encoded_audio):
+        """Decodes 4-bit ADPCM to 16-bit PCM."""
+        step = 7
+        decoded_audio = []
+        prev_sample = 0
+
+        encoded_values = struct.unpack(f'{len(encoded_audio)}B', encoded_audio)
+
+        for val in encoded_values:
+            step_index = (val & 0xF) - 8  # Convert 4-bit back to signed integer
+            prev_sample += step_index * step
+            decoded_audio.append(prev_sample)
+
+        return np.array(decoded_audio, dtype=np.int16).tobytes()
 
     def recv_audio(self):
         try:
             stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
             while True:
                 try:
-                    data = self.audio_socket.recv(CHUNK)  # Reduced size due to compression
+                    data = self.audio_socket.recv(CHUNK // 2)  # ADPCM reduces data by 50%
                     if not data:
                         break
-                    decompressed_data = self.mu_law_decode(data)  # Decompress
+                    decompressed_data = self.adpcm_decode(data)  # Decompress
                     stream.write(decompressed_data)
                 except (socket.error, ConnectionResetError) as e:
                     print(f"Audio receive error: {e}")
@@ -619,6 +634,7 @@ class Meeting():
         finally:
             stream.stop_stream()
             stream.close()
+
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
@@ -670,7 +686,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+root.iconbitmap("img/ppico.ico")
 
 #Meeting obj
 
@@ -682,7 +698,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+    con_pop.iconbitmap("img/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -710,7 +726,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+    HNE_name_pop.iconbitmap("img/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -721,11 +737,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
+app_icon1 = Image.open("img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("final_year_project/img/add.png") #type: ignore
+app_icon2 = Image.open("img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
