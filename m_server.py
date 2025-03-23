@@ -19,28 +19,43 @@ A_ADDR = (SERVER, A_PORT)
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000  # Opus optimized rate
-CHUNK = 64   # Opus optimized chunk size
+CHUNK = 128   # Opus optimized chunk size
 
 V_clients = {}
 A_clients = []
 lock = threading.Lock()
 
 
-def mu_law_encode(audio_data, quantization_channels=256):
-    """μ-law encoding for audio compression."""
-    mu = quantization_channels - 1
-    audio_data = np.sign(audio_data) * np.log1p(mu * np.abs(audio_data)) / np.log1p(mu)
-    encoded = ((audio_data + 1) / 2 * mu + 0.5).astype(np.uint8)
-    return encoded.tobytes()
+def adpcm_encode(audio_data):
+    """Encodes 16-bit PCM audio to 4-bit ADPCM."""
+    step = 7
+    encoded_audio = []
+    prev_sample = 0
 
-def mu_law_decode(encoded_audio, quantization_channels=256):
-    """μ-law decoding to restore audio."""
-    mu = quantization_channels - 1
-    encoded_audio = np.frombuffer(encoded_audio, dtype=np.uint8).astype(np.float32)
-    decoded = (encoded_audio / mu) * 2 - 1
-    audio_data = np.sign(decoded) * (1 / mu) * ((1 + mu) ** np.abs(decoded) - 1)
-    return (audio_data * 32767).astype(np.int16).tobytes()
+    for sample in np.frombuffer(audio_data, dtype=np.int16):
+        diff = sample - prev_sample
+        step_index = diff // step
+        step_index = max(-8, min(7, step_index))  # Keep within 4-bit range
+        
+        prev_sample += step_index * step
+        encoded_audio.append(step_index & 0xF)  # Store 4-bit values
 
+    return struct.pack(f'{len(encoded_audio)}B', *encoded_audio)
+
+def adpcm_decode(encoded_audio):
+    """Decodes 4-bit ADPCM to 16-bit PCM."""
+    step = 7
+    decoded_audio = []
+    prev_sample = 0
+
+    encoded_values = struct.unpack(f'{len(encoded_audio)}B', encoded_audio)
+
+    for val in encoded_values:
+        step_index = (val & 0xF) - 8  # Convert 4-bit back to signed integer
+        prev_sample += step_index * step
+        decoded_audio.append(prev_sample)
+
+    return np.array(decoded_audio, dtype=np.int16).tobytes()
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
     global V_clients
@@ -100,7 +115,7 @@ def audio_stream_handler():
 
         for client in readable:
             try:
-                data = client.recv(CHUNK)
+                data = client.recv(CHUNK // 2)  # Since ADPCM is half the size
                 if not data:
                     with lock:
                         A_clients.remove(client)
@@ -116,9 +131,9 @@ def audio_stream_handler():
         if audio_data_dict:
             with lock:
                 for client in A_clients:
-                    other_audio = [mu_law_decode(data) for c, data in audio_data_dict.items() if c != client]
+                    other_audio = [adpcm_decode(data) for c, data in audio_data_dict.items() if c != client]
                     mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
-                    compressed_audio = mu_law_encode(np.frombuffer(mixed_audio, dtype=np.int16))  # Compress before sending
+                    compressed_audio = adpcm_encode(mixed_audio)  # Compress before sending
                     try:
                         client.sendall(compressed_audio)
                     except:
