@@ -8,8 +8,6 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import sounddevice as sd
-import av
 import threading
 import numpy as np
 import pyaudio
@@ -46,10 +44,6 @@ class Meeting():
         self.cap = None
         self.client_socket = None
         self.audio_socket = None
-        self.audio_active = False  # Audio toggle flag
-        self.encoder = av.CodecContext.create("opus", "encode")  # Opus Encoder
-        self.decoder = av.CodecContext.create("opus", "decode")
-
         self.audio_stream = None
         self.audio = pyaudio.PyAudio()
 
@@ -564,63 +558,67 @@ class Meeting():
         """Toggle audio transmission."""
         if self.audio_variable.get():  # Unmute
             if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_active = True
                 self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
                 self.audio_thread.start()
         else:
-            self.audio_active = True
+            if hasattr(self, 'audio_stream') and self.audio_stream:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+                self.audio_stream = None
+
+    def mu_law_encode(self,audio_data, quantization_channels=256):
+        """μ-law encoding for audio compression."""
+        mu = quantization_channels - 1
+        audio_data = np.sign(audio_data) * np.log1p(mu * np.abs(audio_data)) / np.log1p(mu)
+        encoded = ((audio_data + 1) / 2 * mu + 0.5).astype(np.uint8)
+        return encoded.tobytes()
+
+    def mu_law_decode(self,encoded_audio, quantization_channels=256):
+        """μ-law decoding to restore audio."""
+        mu = quantization_channels - 1
+        encoded_audio = np.frombuffer(encoded_audio, dtype=np.uint8).astype(np.float32)
+        decoded = (encoded_audio / mu) * 2 - 1
+        audio_data = np.sign(decoded) * (1 / mu) * ((1 + mu) ** np.abs(decoded) - 1)
+        return (audio_data * 32767).astype(np.int16).tobytes()
 
     def send_audio(self):
-        """Send compressed audio using Opus."""
         try:
-            self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.audio_socket.connect(AP_ADDR)
-            self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-            def callback(indata, frames, time, status):
-                """Capture & send audio packets."""
-                if self.audio_active:
-                    try:
-                        packet = av.Packet.from_ndarray(indata, self.encoder)
-                        self.audio_socket.sendall(packet.to_bytes())  # Send encoded audio
-                    except Exception as e:
-                        print(f"❌ Audio send error: {e}")
-
-            with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)  # Allows callback execution
-
+            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+            while self.audio_variable.get():
+                try:
+                    raw_data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    pcm_data = np.frombuffer(raw_data, dtype=np.int16)
+                    compressed_data = self.mu_law_encode(pcm_data)  # Compress
+                    self.audio_socket.sendall(compressed_data)
+                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
+                    print(f"Audio send error: {e}")
+                    break
         except Exception as e:
-            print(f"❌ Error sending audio: {e}")
+            print(f"❌ Error initializing audio stream: {e}")
         finally:
-            self.audio_socket.close()
+            if hasattr(self, 'audio_stream') and self.audio_stream:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+                self.audio_stream = None
 
     def recv_audio(self):
-        """Receive and decode audio using Opus."""
         try:
-            self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.audio_socket.connect(AP_ADDR)
-            self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-            def callback(outdata, frames, time, status):
-                """Receive & play audio packets."""
+            stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+            while True:
                 try:
-                    data = self.audio_socket.recv(1024)  # Receive compressed audio
+                    data = self.audio_socket.recv(CHUNK)  # Reduced size due to compression
                     if not data:
-                        return
-                    decoded_frame = self.decoder.decode(av.Packet(data))[0]
-                    outdata[:] = np.frombuffer(decoded_frame.to_ndarray(), dtype=np.int16)
-                except Exception as e:
-                    print(f"❌ Audio receive error: {e}")
-
-            with sd.OutputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)
-
+                        break
+                    decompressed_data = self.mu_law_decode(data)  # Decompress
+                    stream.write(decompressed_data)
+                except (socket.error, ConnectionResetError) as e:
+                    print(f"Audio receive error: {e}")
+                    break
         except Exception as e:
-            print(f"❌ Error receiving audio: {e}")
+            print(f"❌ Error initializing audio stream: {e}")
         finally:
-            self.audio_socket.close()
+            stream.stop_stream()
+            stream.close()
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
