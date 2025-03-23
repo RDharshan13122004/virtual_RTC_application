@@ -566,20 +566,23 @@ class Meeting():
             if hasattr(self,'audio_stream') and self.audio_stream:
                 self.audio_stream.stop_stream()
                 self.audio_stream.close()
-                self.audio_stream = None
+                self.audio_stream = None                  
                     
     def send_audio(self):
-        """Captures and sends audio data serialized with pickle."""
+        """Captures and sends audio data with a length prefix."""
         try:
             self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-            
+
             while self.audio_variable.get():
                 try:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    packed_data = pickle.dumps(data)  # Serialize data
+                    packed_data = pickle.dumps(data)
+                    
+                    # Prefix the data with its length (4 bytes)
+                    message = struct.pack("!I", len(packed_data)) + packed_data
 
                     if self.audio_socket:
-                        self.audio_socket.sendall(packed_data)
+                        self.audio_socket.sendall(message)
 
                 except (socket.error, BrokenPipeError, ConnectionResetError) as e:
                     print(f"Audio send error: {e}")
@@ -595,15 +598,26 @@ class Meeting():
                 self.audio_stream = None
 
     def recv_audio(self):
-        """Receives and plays back audio data using pickle deserialization."""
+        """Receives and plays audio using structured data."""
         try:
             stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
 
             while True:
                 try:
-                    data = self.audio_socket.recv(4096)  # Increase buffer size for serialized data
-                    if not data:
+                    # Read first 4 bytes to get data length
+                    data_length = self.audio_socket.recv(4)
+                    if not data_length:
                         break
+
+                    data_size = struct.unpack("!I", data_length)[0]
+                    data = b""
+
+                    # Read the complete expected data
+                    while len(data) < data_size:
+                        packet = self.audio_socket.recv(data_size - len(data))
+                        if not packet:
+                            break
+                        data += packet
 
                     unpacked_data = pickle.loads(data)  # Deserialize audio data
                     stream.write(unpacked_data)
