@@ -84,8 +84,33 @@ def mix_audio(audio_data_list):
     mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)  # Averaging technique
     return mixed_audio.tobytes()
 
+def receive_pickle_data(client_socket):
+    """Receives and reconstructs complete pickled audio data."""
+    try:
+        # Read the first 4 bytes to get the length of the data
+        data_length = client_socket.recv(4)
+        if not data_length:
+            return None
+
+        data_size = struct.unpack("!I", data_length)[0]  # Unpack length
+        data = b""
+
+        # Read the full expected data
+        while len(data) < data_size:
+            packet = client_socket.recv(data_size - len(data))
+            if not packet:
+                return None
+            data += packet
+
+        return pickle.loads(data)  # Deserialize
+
+    except Exception as e:
+        print(f"Error receiving audio: {e}")
+        return None
+
+
 def audio_stream_handler():
-    """Handles receiving and sending audio using pickle serialization."""
+    """Handles receiving and sending audio with structured data."""
     while True:
         with lock:
             if not A_clients:
@@ -96,35 +121,30 @@ def audio_stream_handler():
         audio_data_dict = {}
 
         for client in readable_clients:
-            try:
-                data = client.recv(4096)  # Increase buffer size for serialized data
-                if not data:
-                    with lock:
-                        A_clients.remove(client)
-                        client.close()
-                    continue
-
-                unpacked_data = pickle.loads(data)  # Deserialize audio data
-                audio_data_dict[client] = unpacked_data
-
-            except Exception as e:
-                print(f"Error receiving audio: {e}")
+            data = receive_pickle_data(client)  # Receive structured data
+            if data is not None:
+                audio_data_dict[client] = data
+            else:
                 with lock:
                     A_clients.remove(client)
                     client.close()
 
         mixed_audio = mix_audio(list(audio_data_dict.values())) if audio_data_dict else b'\x00' * CHUNK * 2
-        packed_audio = pickle.dumps(mixed_audio)  # Serialize mixed audio
+        packed_audio = pickle.dumps(mixed_audio)
+
+        # Add structured length prefix
+        message = struct.pack("!I", len(packed_audio)) + packed_audio
 
         with lock:
             for client in readable_clients:
                 try:
-                    client.sendall(packed_audio)
+                    client.sendall(message)
                 except Exception as e:
                     print(f"Error sending mixed audio: {e}")
                     with lock:
                         A_clients.remove(client)
                         client.close()
+
 
 def start_server():
     """Starts the video and audio servers."""
