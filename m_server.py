@@ -3,10 +3,10 @@ import threading
 import struct
 import zlib
 import time
-import pickle
 import select
 import pyaudio
 import numpy as np
+import av  # Opus codec
 
 # Server Configuration
 SERVER = socket.gethostbyname(socket.gethostname())
@@ -18,12 +18,16 @@ A_ADDR = (SERVER, A_PORT)
 # Audio Settings
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 32000
-CHUNK = 128
+RATE = 48000  # Opus optimized rate
+CHUNK = 960   # Opus optimized chunk size
 
 V_clients = {}
 A_clients = []
 lock = threading.Lock()
+
+# Initialize Opus encoder/decoder
+encoder = av.CodecContext.create("opus", "encode")
+decoder = av.CodecContext.create("opus", "decode")
 
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
@@ -72,6 +76,62 @@ def video_stream_handler(vid_client_socket, client_assign_id):
             V_clients.pop(client_assign_id, None)
         vid_client_socket.close()
 
+def audio_stream_handler():
+    """Handles Opus-encoded audio streaming for all clients."""
+    while True:
+        with lock:
+            if not A_clients:
+                time.sleep(0.05)  # Allow CPU to breathe
+                continue
+
+        readable, _, _ = select.select(A_clients, [], [], 0.05)  
+        audio_data_dict = {}
+
+        for client in readable:
+            try:
+                encoded_data = client.recv(1024)  # Receiving compressed Opus data
+                if not encoded_data:
+                    with lock:
+                        A_clients.remove(client)
+                    client.close()
+                    continue
+                
+                # Decode Opus data
+                packet = av.Packet(encoded_data)
+                decoded_frame = decoder.decode(packet)[0]
+                pcm_data = decoded_frame.to_ndarray().tobytes()
+
+                audio_data_dict[client] = pcm_data
+            except:
+                with lock:
+                    if client in A_clients:
+                        A_clients.remove(client)
+                client.close()
+
+        # Process and broadcast audio
+        if audio_data_dict:
+            with lock:
+                for client in A_clients:
+                    if client in audio_data_dict:
+                        other_audio = [data for c, data in audio_data_dict.items() if c != client]
+                    else:
+                        other_audio = list(audio_data_dict.values())
+
+                    mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
+
+                    # Encode and send Opus data
+                    frame = av.AudioFrame.from_ndarray(np.frombuffer(mixed_audio, dtype=np.int16), format="s16", layout="mono")
+                    encoded_packet = encoder.encode(frame)
+                    
+                    try:
+                        client.sendall(encoded_packet.to_bytes())
+                    except:
+                        with lock:
+                            if client in A_clients:
+                                A_clients.remove(client)
+
+        time.sleep(0.01)
+
 def mix_audio(audio_data_list):
     """Mix multiple audio streams together."""
     if not audio_data_list:
@@ -83,68 +143,6 @@ def mix_audio(audio_data_list):
 
     mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)  # Averaging technique
     return mixed_audio.tobytes()
-
-def receive_pickle_data(client_socket):
-    """Receives and reconstructs complete pickled audio data."""
-    try:
-        # Read the first 4 bytes to get the length of the data
-        data_length = client_socket.recv(4)
-        if not data_length:
-            return None
-
-        data_size = struct.unpack("!I", data_length)[0]  # Unpack length
-        data = b""
-
-        # Read the full expected data
-        while len(data) < data_size:
-            packet = client_socket.recv(data_size - len(data))
-            if not packet:
-                return None
-            data += packet
-
-        return pickle.loads(data)  # Deserialize
-
-    except Exception as e:
-        print(f"Error receiving audio: {e}")
-        return None
-
-
-def audio_stream_handler():
-    """Handles receiving and sending audio with structured data."""
-    while True:
-        with lock:
-            if not A_clients:
-                time.sleep(0.01)
-                continue
-
-        readable_clients = A_clients.copy()
-        audio_data_dict = {}
-
-        for client in readable_clients:
-            data = receive_pickle_data(client)  # Receive structured data
-            if data is not None:
-                audio_data_dict[client] = data
-            else:
-                with lock:
-                    A_clients.remove(client)
-                    client.close()
-
-        mixed_audio = mix_audio(list(audio_data_dict.values())) if audio_data_dict else b'\x00' * CHUNK * 2
-        packed_audio = pickle.dumps(mixed_audio)
-
-        # Add structured length prefix
-        message = struct.pack("!I", len(packed_audio)) + packed_audio
-
-        with lock:
-            for client in readable_clients:
-                try:
-                    client.sendall(message)
-                except Exception as e:
-                    print(f"Error sending mixed audio: {e}")
-                    with lock:
-                        A_clients.remove(client)
-                        client.close()
-
 
 def start_server():
     """Starts the video and audio servers."""
@@ -166,6 +164,7 @@ def start_server():
         while True:
             vid_client, vid_addr = video_server.accept()
             aud_client, aud_addr = audio_server.accept()
+            aud_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)  # Reduce latency
 
             print(f"✅ New Video Connection: {vid_addr}")
             print(f"✅ New Audio Connection: {aud_addr}")
