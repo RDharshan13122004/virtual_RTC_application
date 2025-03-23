@@ -6,7 +6,7 @@ import time
 import select
 import pyaudio
 import numpy as np
-import av  # Opus codec
+
 
 # Server Configuration
 SERVER = socket.gethostbyname(socket.gethostname())
@@ -18,16 +18,28 @@ A_ADDR = (SERVER, A_PORT)
 # Audio Settings
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 48000  # Opus optimized rate
-CHUNK = 960   # Opus optimized chunk size
+RATE = 32000  # Opus optimized rate
+CHUNK = 64   # Opus optimized chunk size
 
 V_clients = {}
 A_clients = []
 lock = threading.Lock()
 
-# Initialize Opus encoder/decoder
-encoder = av.CodecContext.create("opus", "encode")
-decoder = av.CodecContext.create("opus", "decode")
+
+def mu_law_encode(audio_data, quantization_channels=256):
+    """μ-law encoding for audio compression."""
+    mu = quantization_channels - 1
+    audio_data = np.sign(audio_data) * np.log1p(mu * np.abs(audio_data)) / np.log1p(mu)
+    encoded = ((audio_data + 1) / 2 * mu + 0.5).astype(np.uint8)
+    return encoded.tobytes()
+
+def mu_law_decode(encoded_audio, quantization_channels=256):
+    """μ-law decoding to restore audio."""
+    mu = quantization_channels - 1
+    encoded_audio = np.frombuffer(encoded_audio, dtype=np.uint8).astype(np.float32)
+    decoded = (encoded_audio / mu) * 2 - 1
+    audio_data = np.sign(decoded) * (1 / mu) * ((1 + mu) ** np.abs(decoded) - 1)
+    return (audio_data * 32767).astype(np.int16).tobytes()
 
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
@@ -77,59 +89,42 @@ def video_stream_handler(vid_client_socket, client_assign_id):
         vid_client_socket.close()
 
 def audio_stream_handler():
-    """Handles Opus-encoded audio streaming for all clients."""
     while True:
         with lock:
             if not A_clients:
                 time.sleep(0.05)  # Allow CPU to breathe
                 continue
 
-        readable, _, _ = select.select(A_clients, [], [], 0.05)  
+        readable, _, _ = select.select(A_clients, [], [], 0.05)
         audio_data_dict = {}
 
         for client in readable:
             try:
-                encoded_data = client.recv(1024)  # Receiving compressed Opus data
-                if not encoded_data:
+                data = client.recv(CHUNK)
+                if not data:
                     with lock:
                         A_clients.remove(client)
                     client.close()
                     continue
-                
-                # Decode Opus data
-                packet = av.Packet(encoded_data)
-                decoded_frame = decoder.decode(packet)[0]
-                pcm_data = decoded_frame.to_ndarray().tobytes()
-
-                audio_data_dict[client] = pcm_data
+                audio_data_dict[client] = data
             except:
                 with lock:
                     if client in A_clients:
                         A_clients.remove(client)
                 client.close()
 
-        # Process and broadcast audio
         if audio_data_dict:
             with lock:
                 for client in A_clients:
-                    if client in audio_data_dict:
-                        other_audio = [data for c, data in audio_data_dict.items() if c != client]
-                    else:
-                        other_audio = list(audio_data_dict.values())
-
+                    other_audio = [mu_law_decode(data) for c, data in audio_data_dict.items() if c != client]
                     mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
-
-                    # Encode and send Opus data
-                    frame = av.AudioFrame.from_ndarray(np.frombuffer(mixed_audio, dtype=np.int16), format="s16", layout="mono")
-                    encoded_packet = encoder.encode(frame)
-                    
+                    compressed_audio = mu_law_encode(np.frombuffer(mixed_audio, dtype=np.int16))  # Compress before sending
                     try:
-                        client.sendall(encoded_packet.to_bytes())
+                        client.sendall(compressed_audio)
                     except:
                         with lock:
                             if client in A_clients:
                                 A_clients.remove(client)
-
         time.sleep(0.01)
 
 def mix_audio(audio_data_list):
