@@ -2,11 +2,9 @@ import socket
 import threading
 import struct
 import zlib
-import time
-import select
 import pyaudio
 import numpy as np
-
+import av  # Opus codec
 
 # Server Configuration
 SERVER = socket.gethostbyname(socket.gethostname())
@@ -18,50 +16,19 @@ A_ADDR = (SERVER, A_PORT)
 # Audio Settings
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 32000  # Opus optimized rate
-CHUNK = 128   # Opus optimized chunk size
+RATE = 32000
+CHUNK = 128
 
 V_clients = {}
 A_clients = []
+audio_data_dict = {}
 lock = threading.Lock()
+A_lock = threading.Lock()
 
-
-def adpcm_encode(audio_data):
-    """Encodes 16-bit PCM audio to 4-bit ADPCM."""
-    step = 7
-    encoded_audio = []
-    prev_sample = 0
-
-    for sample in np.frombuffer(audio_data, dtype=np.int16):
-        diff = sample - prev_sample
-        step_index = diff // step
-        step_index = max(-8, min(7, step_index))  # Keep within 4-bit range
-        
-        prev_sample += step_index * step
-        encoded_audio.append(step_index & 0xF)  # Store 4-bit values
-
-    return struct.pack(f'{len(encoded_audio)}B', *encoded_audio)
-
-def adpcm_decode(encoded_audio):
-    """Decodes 4-bit ADPCM to 16-bit PCM."""
-    step = 7
-    decoded_audio = []
-    prev_sample = 0
-
-    encoded_values = struct.unpack(f'{len(encoded_audio)}B', encoded_audio)
-
-    for val in encoded_values:
-        step_index = (val & 0xF) - 8  # Convert 4-bit back to signed integer
-        prev_sample += step_index * step
-        decoded_audio.append(prev_sample)
-
-    return np.array(decoded_audio, dtype=np.int16).tobytes()
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
     global V_clients
     try:
-        vid_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)  # Increase buffer size
-
         while True:
             frame_size_data = vid_client_socket.recv(8)
             if not frame_size_data:
@@ -103,44 +70,82 @@ def video_stream_handler(vid_client_socket, client_assign_id):
             V_clients.pop(client_assign_id, None)
         vid_client_socket.close()
 
-def audio_stream_handler():
-    while True:
-        with lock:
-            if not A_clients:
-                time.sleep(0.05)  # Allow CPU to breathe
-                continue
+def create_opus_encoder():
+    """Creates an Opus encoder context."""
+    container = av.open(format='ogg', mode='w')
+    stream = container.add_stream('opus', RATE)
+    stream.channels = CHANNELS
+    stream.codec_context.sample_rate = RATE
+    stream.codec_context.bit_rate = 32000  # Adjust bitrate if needed
+    return container, stream
 
-        readable, _, _ = select.select(A_clients, [], [], 0.05)
-        audio_data_dict = {}
+def create_opus_decoder():
+    """Creates an Opus decoder context."""
+    container = av.open(format='ogg', mode='r')
+    return container
 
-        for client in readable:
+def encode_audio(opus_encoder, opus_stream, pcm_data):
+    """Encodes PCM audio data using Opus."""
+    frame = av.AudioFrame.from_ndarray(np.frombuffer(pcm_data, dtype=np.int16), format='s16', layout='mono')
+    frame.sample_rate = RATE
+    packet = opus_stream.encode(frame)
+    return packet.to_bytes() if packet else b''
+
+def decode_audio(opus_decoder, opus_packet):
+    """Decodes Opus-encoded audio back to PCM."""
+    packet = av.Packet(opus_packet)
+    opus_decoder.mux(packet)
+    for frame in opus_decoder.decode():
+        return frame.to_ndarray().tobytes()
+    return b''  # Return empty bytes if decoding fails
+
+def audio_stream_handler(client_socket):
+    """Handles audio streaming for a single client with Opus encoding."""
+    global A_clients, audio_data_dict
+
+    opus_decoder = create_opus_decoder()
+    opus_encoder, opus_stream = create_opus_encoder()
+
+    try:
+        while True:
+            data = client_socket.recv(1024)  # Adjust buffer size for Opus packets
+            if not data:
+                break  # Client disconnected
+
+            # Decode incoming Opus data
+            pcm_audio = decode_audio(opus_decoder, data)
+            if not pcm_audio:
+                continue  # Skip if decoding fails
+
+            with A_lock:
+                audio_data_dict[client_socket] = pcm_audio  # Store raw PCM audio
+
+            # Prepare mixed audio excluding this client's own data
+            with A_lock:
+                other_audio = [
+                    data for c, data in audio_data_dict.items() if c != client_socket
+                ]
+
+            mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
+
+            # Encode mixed audio with Opus
+            opus_encoded_audio = encode_audio(opus_encoder, opus_stream, mixed_audio)
+
             try:
-                data = client.recv(CHUNK // 2)  # Since ADPCM is half the size
-                if not data:
-                    with lock:
-                        A_clients.remove(client)
-                    client.close()
-                    continue
-                audio_data_dict[client] = data
+                client_socket.sendall(opus_encoded_audio)  # Send Opus-compressed mixed audio
             except:
-                with lock:
-                    if client in A_clients:
-                        A_clients.remove(client)
-                client.close()
+                break  # Client disconnected
 
-        if audio_data_dict:
-            with lock:
-                for client in A_clients:
-                    other_audio = [adpcm_decode(data) for c, data in audio_data_dict.items() if c != client]
-                    mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
-                    compressed_audio = adpcm_encode(mixed_audio)  # Compress before sending
-                    try:
-                        client.sendall(compressed_audio)
-                    except:
-                        with lock:
-                            if client in A_clients:
-                                A_clients.remove(client)
-        time.sleep(0.01)
+    except Exception as e:
+        print(f"⚠️ Error with audio client: {e}")
+
+    finally:
+        with A_lock:
+            if client_socket in A_clients:
+                A_clients.remove(client_socket)
+            if client_socket in audio_data_dict:
+                del audio_data_dict[client_socket]
+        client_socket.close()
 
 def mix_audio(audio_data_list):
     """Mix multiple audio streams together."""
@@ -168,8 +173,7 @@ def start_server():
     print(f"🎙️ Audio Server started on port {A_PORT}")
 
     client_counter_id = 0
-    threading.Thread(target=audio_stream_handler, daemon=True).start()
-    
+
     try:
         while True:
             vid_client, vid_addr = video_server.accept()
@@ -185,17 +189,18 @@ def start_server():
                 V_clients[client_counter_id] = vid_client
                 A_clients.append(aud_client)
 
+            threading.Thread(target=audio_stream_handler, args=(aud_client,), daemon=True).start()
             threading.Thread(target=video_stream_handler, args=(vid_client, client_counter_id), daemon=True).start()
-    
+
     except KeyboardInterrupt:
         print("🛑 Server is shutting down...")
     finally:
         with lock:
             for V_client_socket in V_clients.values():
                 V_client_socket.close()
-
             for A_client_socket in A_clients:
                 A_client_socket.close()
+
 
 if __name__ == "__main__":
     print(f"🌐 Server listening on {SERVER}")
