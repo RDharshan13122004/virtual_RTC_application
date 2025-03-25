@@ -8,8 +8,6 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import sounddevice as sd
-import av
 import threading
 import numpy as np
 import pyaudio
@@ -23,7 +21,7 @@ AP_ADDR = (SERVER,A_PORT)
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 128
+CHUNK = 64
 
 
 class Meeting():
@@ -47,15 +45,9 @@ class Meeting():
         self.client_socket = None
         self.audio_socket = None
         self.audio_active = False  # Audio toggle flag
-        self.encoder = av.open(format='ogg', mode='w')
-        self.encoder_stream = self.encoder.add_stream("opus", RATE)
-        self.encoder_stream.channels = CHANNELS
-        self.encoder_stream.codec_context.sample_rate = RATE
 
-        self.decoder = av.open(format='ogg', mode='r')
-
-        # self.audio_stream = None
-        # self.audio = pyaudio.PyAudio()
+        self.audio_stream = None
+        self.audio = pyaudio.PyAudio()
 
 
     def Create_Meeting(self,host_name):
@@ -565,77 +557,46 @@ class Meeting():
         self.recv_video_label.after(10,self.display_recv_frame)
 
     def start_stop_audio(self):
-        """Toggle audio transmission."""
-        if self.audio_variable.get():  # Unmute
-            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_active = True
+        if self.audio_variable.get():
+            if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
                 self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
                 self.audio_thread.start()
+
         else:
-            self.audio_active = True
-
+            if self.audio_stream:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+                self.audio_stream = None
+                    
     def send_audio(self):
-        """Send compressed audio using Opus."""
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+
         try:
-            def callback(indata, frames, time, status):
-                """Capture & send audio packets."""
-                if not self.audio_active:
-                    return
-
+            while self.audio_variable.get():
                 try:
-                    frame = av.AudioFrame.from_ndarray(np.frombuffer(indata, dtype=np.int16), format='s16', layout='mono')
-                    frame.sample_rate = RATE
-                    packet = self.encoder_stream.encode(frame)
-
-                    if packet:
-                        self.audio_socket.sendall(packet.to_bytes())  # Send encoded audio
-
+                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    self.audio_socket.sendall(data)
                 except Exception as e:
-                    print(f"❌ Audio send error: {e}")
-
-            with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)  # Allows callback execution
-
-        except Exception as e:
-            print(f"❌ Error sending audio: {e}")
+                    print(f"Audio send error: {e}")
+                    break
         finally:
-            if self.audio_socket:
-                self.audio_socket.close()
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
 
     def recv_audio(self):
-        """Receive and decode audio using Opus."""
-        try:
-            def callback(outdata, frames, time, status):
-                """Receive & play audio packets."""
-                if not self.audio_active:
-                    return
-
-                try:
-                    data = self.audio_socket.recv(1024)  # Receive compressed audio
-                    if not data:
-                        return
-
-                    packet = av.Packet(data)
-                    self.decoder.mux(packet)
-
-                    for frame in self.decoder.decode():
-                        outdata[:] = np.frombuffer(frame.to_ndarray(), dtype=np.int16)
-
-                except Exception as e:
-                    print(f"❌ Audio receive error: {e}")
-
-            with sd.OutputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)
-
-        except Exception as e:
-            print(f"❌ Error receiving audio: {e}")
-        finally:
-            if self.audio_socket:
-                self.audio_socket.close()
- 
-
+        stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
+        while True:
+            try:    
+                data = self.audio_socket.recv(CHUNK * 2)
+                if not data:
+                    break
+                stream.write(data)
+            except Exception as e:
+                print(f"Audio receive error: {e}")
+            finally:
+                stream.stop_stream()
+                stream.close()
+        
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
@@ -779,3 +740,4 @@ btn2_label = tb.Label(inter_frame2,text="join a meeting",font=("Rockwell Extra B
 btn2_label.pack(padx=35,pady=10,side="left")
 
 root.mainloop()
+

@@ -79,46 +79,18 @@ def create_opus_encoder():
     stream.codec_context.bit_rate = 32000  # Adjust bitrate if needed
     return container, stream
 
-def create_opus_decoder():
-    """Creates an Opus decoder context."""
-    container = av.open(format='ogg', mode='r')
-    return container
-
-def encode_audio(opus_encoder, opus_stream, pcm_data):
-    """Encodes PCM audio data using Opus."""
-    frame = av.AudioFrame.from_ndarray(np.frombuffer(pcm_data, dtype=np.int16), format='s16', layout='mono')
-    frame.sample_rate = RATE
-    packet = opus_stream.encode(frame)
-    return packet.to_bytes() if packet else b''
-
-def decode_audio(opus_decoder, opus_packet):
-    """Decodes Opus-encoded audio back to PCM."""
-    packet = av.Packet(opus_packet)
-    opus_decoder.mux(packet)
-    for frame in opus_decoder.decode():
-        return frame.to_ndarray().tobytes()
-    return b''  # Return empty bytes if decoding fails
-
 def audio_stream_handler(client_socket):
-    """Handles audio streaming for a single client with Opus encoding."""
+    """Handles audio streaming for a single client."""
     global A_clients, audio_data_dict
-
-    opus_decoder = create_opus_decoder()
-    opus_encoder, opus_stream = create_opus_encoder()
 
     try:
         while True:
-            data = client_socket.recv(1024)  # Adjust buffer size for Opus packets
+            data = client_socket.recv(CHUNK * 2)
             if not data:
                 break  # Client disconnected
-
-            # Decode incoming Opus data
-            pcm_audio = decode_audio(opus_decoder, data)
-            if not pcm_audio:
-                continue  # Skip if decoding fails
-
+            
             with A_lock:
-                audio_data_dict[client_socket] = pcm_audio  # Store raw PCM audio
+                audio_data_dict[client_socket] = data  # Store client audio
 
             # Prepare mixed audio excluding this client's own data
             with A_lock:
@@ -128,17 +100,14 @@ def audio_stream_handler(client_socket):
 
             mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
 
-            # Encode mixed audio with Opus
-            opus_encoded_audio = encode_audio(opus_encoder, opus_stream, mixed_audio)
-
             try:
-                client_socket.sendall(opus_encoded_audio)  # Send Opus-compressed mixed audio
+                client_socket.sendall(mixed_audio)  # Send mixed audio back
             except:
                 break  # Client disconnected
 
     except Exception as e:
         print(f"⚠️ Error with audio client: {e}")
-
+    
     finally:
         with A_lock:
             if client_socket in A_clients:
@@ -146,6 +115,7 @@ def audio_stream_handler(client_socket):
             if client_socket in audio_data_dict:
                 del audio_data_dict[client_socket]
         client_socket.close()
+
 
 def mix_audio(audio_data_list):
     """Mix multiple audio streams together."""
