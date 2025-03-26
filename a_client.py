@@ -594,26 +594,53 @@ class Meeting():
                     break
 
                 sender_id, data_length = struct.unpack("!II",header)
-                compressed_data = self.audio_socket.recv(data_length)
+                compressed_data = b""
 
-                if not compressed_data:
-                    print("No audio data received. Disconnecting.")
-                    break
-                audio_data = zlib.decompress(compressed_data)
+                while len(compressed_data) < data_length:
+                    packet = self.audio_socket.recv(data_length - len(compressed_data))
+                    if not packet:
+                        print("❌ Incomplete audio data received. Disconnecting.")
+                        return  # Exit function to prevent decompression errors
+                    compressed_data += packet    
                 
-                self.stream.write(audio_data)
-            except Exception as e:
-                print(f"Audio receive error: {e}")
+                try:
+                    audio_data = zlib.decompress(compressed_data)
+                except zlib.error as e:
+                    print(f"🚨 Decompression error: {e} | Data length: {len(compressed_data)}")
+                    continue
+                
+                if hasattr(self, "stream") and self.stream:
+                    self.stream.write(audio_data)
+                else:
+                    print("⚠️ Audio stream is not open. Skipping playback.")
+            except ConnectionResetError:
+                print("❌ Connection was forcibly closed by the server.")
                 break
+            except Exception as e:
+                print(f"❌ Audio receive error: {e}")
+                break
+
             finally:
 
-                if hasattr(self, "stream") and self.stream:
-                    self.stream.stop_stream()
-                    self.stream.close()
-                if hasattr(self, "audio") and self.audio:
-                    self.audio.terminate()
-                if hasattr(self, "audio_socket") and self.audio_socket:
-                    self.audio_socket.close()
+                print("🔄 Cleaning up audio resources...")
+        if hasattr(self, "stream") and self.stream:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception as e:
+                print(f"⚠️ Error closing stream: {e}")
+
+        if hasattr(self, "audio") and self.audio:
+            try:
+                self.audio.terminate()
+            except Exception as e:
+                print(f"⚠️ Error terminating PyAudio: {e}")
+
+        if hasattr(self, "audio_socket") and self.audio_socket:
+            try:
+                self.audio_socket.close()
+            except Exception as e:
+                print(f"⚠️ Error closing socket: {e}")
                 
     def end_meeting(self,Close):
         if Close in "End all meeting":
