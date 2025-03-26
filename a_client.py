@@ -12,7 +12,7 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.12"
+SERVER = "192.168.29.60"
 V_PORT = 65432
 A_PORT = 12345
 VP_ADDR = (SERVER,V_PORT)
@@ -596,6 +596,9 @@ class Meeting():
                 sender_id, data_length = struct.unpack("!II",header)
                 compressed_data = self.audio_socket.recv(data_length)
 
+                if not compressed_data:
+                    print("No audio data received. Disconnecting.")
+                    break
                 audio_data = zlib.decompress(compressed_data)
                 
                 self.stream.write(audio_data)
@@ -604,10 +607,13 @@ class Meeting():
                 break
             finally:
 
-                self.stream.stop_stream()
-                self.stream.close()
-                self.audio.close()
-                self.audio_socket.close()
+                if hasattr(self, "stream") and self.stream:
+                    self.stream.stop_stream()
+                    self.stream.close()
+                if hasattr(self, "audio") and self.audio:
+                    self.audio.terminate()
+                if hasattr(self, "audio_socket") and self.audio_socket:
+                    self.audio_socket.close()
                 
     def end_meeting(self,Close):
         if Close in "End all meeting":
