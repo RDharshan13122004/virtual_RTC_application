@@ -90,17 +90,21 @@ def audio_stream_handler(aud_clients,client_counter_id):
         while True:
             aud_size_data = recv_all(aud_clients, 4)
             if not aud_size_data:
+                print(f"Client {client_counter_id} disconnected.")
                 break
 
             aud_size = struct.unpack("!I", aud_size_data)[0]
             compressed_data = recv_all(aud_clients, aud_size)
 
             if not compressed_data:
+                print(f"Client {client_counter_id} sent empty data. Disconnecting.")
                 break
 
             decompressed_audio = zlib.decompress(compressed_data)
             audio_buffers[client_counter_id].append(decompressed_audio)
 
+            if not any(audio_buffers.values()):
+                continue  
             # Convert audio buffers to NumPy arrays
             audio_arrays = [
                 np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
@@ -126,14 +130,17 @@ def audio_stream_handler(aud_clients,client_counter_id):
                     try:
                         packed_response = struct.pack("!II",client_counter_id,len(mixed_audio)) + mixed_audio
                         sock.sendall(packed_response)
-                    except:
-                        pass
+                    except (ConnectionResetError, BrokenPipeError):
+                        print(f"Connection lost with client {cid}. Removing from list.")
+                        del A_clients[cid]  
        
     except Exception as e:
-         with A_lock:
-                del A_clients[client_counter_id]
-                del audio_buffers[client_counter_id]
-                aud_clients.close()
+         print(f"Error in audio handler: {e}")
+    finally:
+        with A_lock:
+                del A_clients.pop(client_counter_id, None)
+                del audio_buffers.pop(client_counter_id, None)
+        aud_clients.close()
 
 #def mix_audio(audio_data_list):
     # """Mix multiple audio streams together."""
