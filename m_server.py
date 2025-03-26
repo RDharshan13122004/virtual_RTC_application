@@ -85,7 +85,7 @@ def video_stream_handler(vid_client_socket, client_assign_id):
 def audio_stream_handler(aud_clients,client_counter_id):
     global A_clients, audio_buffers
     try:
-        if client_counter_id not in audio_buffers:
+        if client_counter_id not in audio_buffers or not isinstance(audio_buffers[client_counter_id], deque):
             audio_buffers[client_counter_id] = deque(maxlen=MAX_BUFFER_SIZE)  # Sliding window buffer
         while True:
             aud_size_data = recv_all(aud_clients, 4)
@@ -101,6 +101,10 @@ def audio_stream_handler(aud_clients,client_counter_id):
                 break
 
             decompressed_audio = zlib.decompress(compressed_data)
+
+            if not isinstance(audio_buffers[client_counter_id], deque):
+                audio_buffers[client_counter_id] = deque(maxlen=MAX_BUFFER_SIZE)
+                
             audio_buffers[client_counter_id].append(decompressed_audio)
 
             if not any(audio_buffers.values()):
@@ -138,8 +142,8 @@ def audio_stream_handler(aud_clients,client_counter_id):
          print(f"Error in audio handler: {e}")
     finally:
         with A_lock:
-                del A_clients.pop(client_counter_id, None)
-                del audio_buffers.pop(client_counter_id, None)
+                A_clients.pop(client_counter_id, None)
+                audio_buffers.pop(client_counter_id, None)
         aud_clients.close()
 
 #def mix_audio(audio_data_list):
