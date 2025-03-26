@@ -67,12 +67,12 @@ class Meeting():
                 self.audio_socket.connect(AP_ADDR)
                 #print("Connected to audio server.")
 
-                self.toast = ToastNotification(title = "quak join",
-                                          message = "Meeting is started",
-                                          duration= 3000,
-                                          bootstyle = "success",
-                                          alert = True,
-                                          )
+            self.toast = ToastNotification(title = "quak join",
+                                        message = "Meeting is started",
+                                        duration= 3000,
+                                        bootstyle = "success",
+                                        alert = True
+                                        )
         except Exception as e:
             #print(f"Error connecting to server: {e}")
             self.toast = ToastNotification(title = "quak join",
@@ -572,75 +572,42 @@ class Meeting():
     def send_audio(self):
         try:
             while True:
-                try:
-                    if self.audio_active:
-                        data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                        compressed_data = zlib.compress(data)
-                        packeted_data = struct.pack("!I",len(compressed_data)) + compressed_data
-                        self.audio_socket.sendall(packeted_data)
-                except Exception as e:
-                    print(f"Audio send error: {e}")
-                    break
-        finally:
-            self.audio_stream.stop_stream()
-            self.audio_stream.close()
+                data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                if not self.audio_active:
+                    data = b"\x00" * len(data)  # Send silence if muted
+                compressed_data = zlib.compress(data)
+                packet = struct.pack("!I", len(compressed_data)) + compressed_data
+                self.audio_socket.sendall(packet)
+        except Exception as e:
+            print(f"Audio send error: {e}")
 
     def recv_audio(self):
+        buffers = {}  # Store incoming audio per client
         while True:
-            try:    
-                
+            try:
                 header = self.audio_socket.recv(8)
                 if not header:
                     break
-
-                sender_id, data_length = struct.unpack("!II",header)
+                sender_id, data_length = struct.unpack("!II", header)
                 compressed_data = b""
-
                 while len(compressed_data) < data_length:
                     packet = self.audio_socket.recv(data_length - len(compressed_data))
                     if not packet:
-                        print("❌ Incomplete audio data received. Disconnecting.")
-                        return  # Exit function to prevent decompression errors
-                    compressed_data += packet    
-                
+                        return
+                    compressed_data += packet
                 try:
                     audio_data = zlib.decompress(compressed_data)
                 except zlib.error as e:
-                    print(f"🚨 Decompression error: {e} | Data length: {len(compressed_data)}")
+                    print(f"Decompression error: {e}")
                     continue
+                buffers[sender_id] = np.frombuffer(audio_data, dtype=np.int16)
                 
-                if hasattr(self, "stream") and self.stream:
-                    self.stream.write(audio_data)
-                else:
-                    print("⚠️ Audio stream is not open. Skipping playback.")
-            except ConnectionResetError:
-                print("❌ Connection was forcibly closed by the server.")
+                if buffers:
+                    mixed_audio = np.sum(np.array(list(buffers.values())), axis=0, dtype=np.int16)
+                    self.stream.write(mixed_audio.tobytes())
+            except Exception as e:
+                print(f"Audio receive error: {e}")
                 break
-            except Exception as e:
-                print(f"❌ Audio receive error: {e}")
-                break
-
-            finally:
-
-                print("🔄 Cleaning up audio resources...")
-        if hasattr(self, "stream") and self.stream:
-            try:
-                self.stream.stop_stream()
-                self.stream.close()
-            except Exception as e:
-                print(f"⚠️ Error closing stream: {e}")
-
-        if hasattr(self, "audio") and self.audio:
-            try:
-                self.audio.terminate()
-            except Exception as e:
-                print(f"⚠️ Error terminating PyAudio: {e}")
-
-        if hasattr(self, "audio_socket") and self.audio_socket:
-            try:
-                self.audio_socket.close()
-            except Exception as e:
-                print(f"⚠️ Error closing socket: {e}")
                 
     def end_meeting(self,Close):
         if Close in "End all meeting":

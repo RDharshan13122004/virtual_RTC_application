@@ -18,24 +18,12 @@ A_ADDR = (SERVER, A_PORT)
 # CHANNELS = 1
 # RATE = 32000
 # CHUNK = 128
-MAX_BUFFER_SIZE = 10
+
 
 V_clients = {}
 A_clients = {}
-audio_buffers = {}
 lock = threading.Lock()
 A_lock = threading.Lock()
-
-def recv_all(sock, size):
-    """Ensures complete data reception over TCP."""
-    data = b""
-    while len(data) < size:
-        packet = sock.recv(size - len(data))
-        if not packet:  
-            return None  # Connection lost
-        data += packet
-    return data
-
 
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
@@ -83,69 +71,41 @@ def video_stream_handler(vid_client_socket, client_assign_id):
         vid_client_socket.close()
 
 def audio_stream_handler(aud_clients,client_counter_id):
-    global A_clients, audio_buffers
     try:
-        if client_counter_id not in audio_buffers or not isinstance(audio_buffers[client_counter_id], deque):
-            audio_buffers[client_counter_id] = deque(maxlen=MAX_BUFFER_SIZE)  # Sliding window buffer
         while True:
-            aud_size_data = recv_all(aud_clients, 4)
-            if not aud_size_data:
-                print(f"Client {client_counter_id} disconnected.")
+            # Receive the audio header
+            header = aud_clients.recv(4)
+            if not header:
                 break
+            
+            data_length = struct.unpack("!I", header)[0]
+            compressed_data = b""
+            
+            while len(compressed_data) < data_length:
+                packet = aud_clients.recv(data_length - len(compressed_data))
+                if not packet:
+                    print(f"Client {client_counter_id} disconnected unexpectedly.")
+                    return
+                compressed_data += packet
 
-            aud_size = struct.unpack("!I", aud_size_data)[0]
-            compressed_data = recv_all(aud_clients, aud_size)
-
-            if not compressed_data:
-                print(f"Client {client_counter_id} sent empty data. Disconnecting.")
-                break
-
-            decompressed_audio = zlib.decompress(compressed_data)
-
-            if not isinstance(audio_buffers[client_counter_id], deque):
-                audio_buffers[client_counter_id] = deque(maxlen=MAX_BUFFER_SIZE)
-                
-            audio_buffers[client_counter_id].append(decompressed_audio)
-
-            if not any(audio_buffers.values()):
-                continue  
-            # Convert audio buffers to NumPy arrays
-            audio_arrays = [
-                np.frombuffer(chunk, dtype=np.int16).astype(np.float32)
-                for buffer in audio_buffers.values()
-                for chunk in buffer
-            ]
-
-            if not audio_arrays:
-                continue  # Skip if no valid data
-
-            # Trim to the shortest sample length to avoid mismatches
-            min_length = min(len(arr) for arr in audio_arrays)
-            audio_arrays = [arr[:min_length] for arr in audio_arrays]
-
-            # Perform sample-wise averaging
-            mixed_audio_array = np.mean(audio_arrays, axis=0).astype(np.int16)
-
-            # Convert back to bytes
-            mixed_audio = mixed_audio_array.tobytes()
-
-            for cid, sock in A_clients.items():
-                if cid != client_counter_id:
-                    try:
-                        packed_response = struct.pack("!II",client_counter_id,len(mixed_audio)) + mixed_audio
-                        sock.sendall(packed_response)
-                    except (ConnectionResetError, BrokenPipeError):
-                        print(f"Connection lost with client {cid}. Removing from list.")
-                        del A_clients[cid]  
-       
-    except Exception as e:
-         print(f"Error in audio handler: {e}")
+            # Broadcast audio data to all clients except sender
+            with A_lock:
+                for target_id, (target_socket, _) in A_clients.items():
+                    if target_id != client_counter_id:
+                        try:
+                            packet_to_send = struct.pack("!II", client_counter_id, len(compressed_data)) + compressed_data
+                            target_socket.sendall(packet_to_send)
+                        except:
+                            print(f"Failed to send audio to client {target_id}")
+    
+    except ConnectionResetError:
+        print(f"Client {client_counter_id} disconnected forcefully.")
     finally:
+        # Remove the client
         with A_lock:
-                A_clients.pop(client_counter_id, None)
-                audio_buffers.pop(client_counter_id, None)
+            if client_counter_id in A_clients:
+                del A_clients[client_counter_id]
         aud_clients.close()
-
 #def mix_audio(audio_data_list):
     # """Mix multiple audio streams together."""
     # if not audio_data_list:
@@ -189,7 +149,6 @@ def start_server():
                 V_clients[client_counter_id] = vid_client
                 A_clients[client_counter_id] = aud_client
 
-                audio_buffers[client_counter_id] = b""
 
             threading.Thread(target=audio_stream_handler, args=(aud_client,client_counter_id),daemon=True).start()
             threading.Thread(target=video_stream_handler, args=(vid_client, client_counter_id), daemon=True).start()
