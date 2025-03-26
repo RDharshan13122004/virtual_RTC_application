@@ -14,7 +14,7 @@ import pyaudio
 
 SERVER = "192.168.29.12"
 V_PORT = 65432
-A_PORT = 50000 
+A_PORT = 12345
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
@@ -26,15 +26,15 @@ CHUNK = 64
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
+        self.video_image = Image.open("img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
+        self.audio_image = Image.open("img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
+        self.info_image = Image.open("img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -43,12 +43,14 @@ class Meeting():
         self.lock = threading.Lock()
         self.cap = None
         self.client_socket = None
+
         self.audio_socket = None
         self.audio_active = False  # Audio toggle flag
-
         self.audio_stream = None
+        self.stream = None 
         self.audio = pyaudio.PyAudio()
-
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+        self.stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
 
     def Create_Meeting(self,host_name):
 
@@ -85,7 +87,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")    
+        self.Meeting_root.iconbitmap("img/ppico.ico")    
         
         self.name = host_name
 
@@ -260,7 +262,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+        self.Meeting_root.iconbitmap("img/ppico.ico")
         
         
         self.name = part_name
@@ -387,7 +389,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+        self.info_pp.iconbitmap("img/ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -561,21 +563,21 @@ class Meeting():
             if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
                 self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
                 self.audio_thread.start()
+                self.audio_active = True
 
         else:
             if self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
+                self.audio_active = False
                     
     def send_audio(self):
-        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
-
         try:
-            while self.audio_variable.get():
+            while True:
                 try:
-                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    self.audio_socket.sendall(data)
+                    if self.audio_active:
+                        data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                        compressed_data = zlib.compress(data)
+                        packeted_data = struct.pack("!I",len(compressed_data)) + compressed_data
+                        self.audio_socket.sendall(packeted_data)
                 except Exception as e:
                     print(f"Audio send error: {e}")
                     break
@@ -584,20 +586,29 @@ class Meeting():
             self.audio_stream.close()
 
     def recv_audio(self):
-        stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
         while True:
             try:    
-                data = self.audio_socket.recv(CHUNK * 2)
-                if not data:
+                
+                header = self.audio_socket.recv(8)
+                if not header:
                     break
-                stream.write(data)
+
+                sender_id, data_length = struct.unpack("!II",header)
+                compressed_data = self.audio_socket.recv(data_length)
+
+                audio_data = zlib.decompress(compressed_data)
+                
+                self.stream.write(audio_data)
             except Exception as e:
                 print(f"Audio receive error: {e}")
+                break
             finally:
-                stream.stop_stream()
-                stream.close()
-        
 
+                self.stream.stop_stream()
+                self.stream.close()
+                self.audio.close()
+                self.audio_socket.close()
+                
     def end_meeting(self,Close):
         if Close in "End all meeting":
             if hasattr(self,'cap') and self.cap:
@@ -648,7 +659,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+root.iconbitmap("img/ppico.ico")
 
 #Meeting obj
 
@@ -660,7 +671,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+    con_pop.iconbitmap("img/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -688,7 +699,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
+    HNE_name_pop.iconbitmap("img/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -699,11 +710,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
+app_icon1 = Image.open("img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("final_year_project/img/add.png") #type: ignore
+app_icon2 = Image.open("img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
@@ -740,4 +751,3 @@ btn2_label = tb.Label(inter_frame2,text="join a meeting",font=("Rockwell Extra B
 btn2_label.pack(padx=35,pady=10,side="left")
 
 root.mainloop()
-
