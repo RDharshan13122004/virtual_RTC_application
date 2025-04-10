@@ -8,22 +8,20 @@ from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import sounddevice as sd
-import av
 import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.12"
+SERVER = "192.168.29.224"
 V_PORT = 65432
-A_PORT = 50000 
+A_PORT = 12345
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 32000
-CHUNK = 128
+CHUNK = 64
 
 
 class Meeting():
@@ -45,18 +43,14 @@ class Meeting():
         self.lock = threading.Lock()
         self.cap = None
         self.client_socket = None
+
         self.audio_socket = None
         self.audio_active = False  # Audio toggle flag
-        self.encoder = av.open(format='ogg', mode='w')
-        self.encoder_stream = self.encoder.add_stream("opus", RATE)
-        self.encoder_stream.channels = CHANNELS
-        self.encoder_stream.codec_context.sample_rate = RATE
-
-        self.decoder = av.open(format='ogg', mode='r')
-
-        # self.audio_stream = None
-        # self.audio = pyaudio.PyAudio()
-
+        self.audio_stream = None
+        self.stream = None 
+        self.audio = pyaudio.PyAudio()
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+        self.stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
 
     def Create_Meeting(self,host_name):
 
@@ -67,18 +61,15 @@ class Meeting():
                 self.client_socket.connect(VP_ADDR)
                 #print("Connected to video server.")
 
-            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
-                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                self.audio_socket.connect(AP_ADDR)
                 #print("Connected to audio server.")
 
-                self.toast = ToastNotification(title = "quak join",
-                                          message = "Meeting is started",
-                                          duration= 3000,
-                                          bootstyle = "success",
-                                          alert = True,
-                                          )
+            self.toast = ToastNotification(title = "quak join",
+                                        message = "Meeting is started",
+                                        duration= 3000,
+                                        bootstyle = "success",
+                                        alert = True
+                                        )
+            self.toast.show_toast()
         except Exception as e:
             #print(f"Error connecting to server: {e}")
             self.toast = ToastNotification(title = "quak join",
@@ -87,6 +78,7 @@ class Meeting():
                                           bootstyle = "danger",
                                           alert = True,
                                           )
+            self.toast.show_toast()
             return            
 
         if HNE_Sumbit_btn:
@@ -221,8 +213,6 @@ class Meeting():
             self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
             self.grid_thread.start()
 
-            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
-            self.Arecv_thread.start()
         except Exception as e:
             print(f"Error starting threads: {e}")
 
@@ -251,6 +241,7 @@ class Meeting():
                                           bootstyle = "success",
                                           alert = True,
                                           )
+                self.toast.show_toast()
 
         except Exception as e:
             #print(f"Error connecting to server: {e}")
@@ -260,6 +251,7 @@ class Meeting():
                                           bootstyle = "danger",
                                           alert = True,
                                           )
+            self.toast.show_toast()
             return
             
         if MC_Sumbit_btn:
@@ -565,77 +557,14 @@ class Meeting():
         self.recv_video_label.after(10,self.display_recv_frame)
 
     def start_stop_audio(self):
-        """Toggle audio transmission."""
-        if self.audio_variable.get():  # Unmute
-            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_active = True
-                self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
-                self.audio_thread.start()
-        else:
-            self.audio_active = True
-
+        if self.audio_variable.get():
+            pass
+                    
     def send_audio(self):
-        """Send compressed audio using Opus."""
-        try:
-            def callback(indata, frames, time, status):
-                """Capture & send audio packets."""
-                if not self.audio_active:
-                    return
-
-                try:
-                    frame = av.AudioFrame.from_ndarray(np.frombuffer(indata, dtype=np.int16), format='s16', layout='mono')
-                    frame.sample_rate = RATE
-                    packet = self.encoder_stream.encode(frame)
-
-                    if packet:
-                        self.audio_socket.sendall(packet.to_bytes())  # Send encoded audio
-
-                except Exception as e:
-                    print(f"❌ Audio send error: {e}")
-
-            with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)  # Allows callback execution
-
-        except Exception as e:
-            print(f"❌ Error sending audio: {e}")
-        finally:
-            if self.audio_socket:
-                self.audio_socket.close()
+        pass
 
     def recv_audio(self):
-        """Receive and decode audio using Opus."""
-        try:
-            def callback(outdata, frames, time, status):
-                """Receive & play audio packets."""
-                if not self.audio_active:
-                    return
-
-                try:
-                    data = self.audio_socket.recv(1024)  # Receive compressed audio
-                    if not data:
-                        return
-
-                    packet = av.Packet(data)
-                    self.decoder.mux(packet)
-
-                    for frame in self.decoder.decode():
-                        outdata[:] = np.frombuffer(frame.to_ndarray(), dtype=np.int16)
-
-                except Exception as e:
-                    print(f"❌ Audio receive error: {e}")
-
-            with sd.OutputStream(samplerate=RATE, channels=CHANNELS, callback=callback, dtype='int16'):
-                while self.audio_active:
-                    sd.sleep(20)
-
-        except Exception as e:
-            print(f"❌ Error receiving audio: {e}")
-        finally:
-            if self.audio_socket:
-                self.audio_socket.close()
- 
-
+        pass
 
     def end_meeting(self,Close):
         if Close in "End all meeting":
@@ -707,11 +636,11 @@ def connection_pop():
     MC_SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
     MC_SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
 
-    MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
-    MC_Meeting_password_label.pack(padx=40,pady=10)
+    # MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
+    # MC_Meeting_password_label.pack(padx=40,pady=10)
 
-    MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
-    MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
+    # MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
+    # MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
 
     MC_name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     MC_name_entry_label.pack(padx=40,pady=10)
@@ -738,11 +667,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("final_year_project/img/video-camera.png") #type: ignore
+app_icon1 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("final_year_project/img/add.png") #type: ignore
+app_icon2 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 

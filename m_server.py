@@ -4,24 +4,24 @@ import struct
 import zlib
 import pyaudio
 import numpy as np
-import av  # Opus codec
+from collections import deque
 
 # Server Configuration
 SERVER = socket.gethostbyname(socket.gethostname())
 V_PORT = 65432
-A_PORT = 50000
+A_PORT = 12345
 V_ADDR = (SERVER, V_PORT)
 A_ADDR = (SERVER, A_PORT)
 
 # Audio Settings
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 32000
-CHUNK = 128
+# FORMAT = pyaudio.paInt16
+# CHANNELS = 1
+# RATE = 32000
+# CHUNK = 128
+
 
 V_clients = {}
-A_clients = []
-audio_data_dict = {}
+A_clients = {}
 lock = threading.Lock()
 A_lock = threading.Lock()
 
@@ -70,94 +70,53 @@ def video_stream_handler(vid_client_socket, client_assign_id):
             V_clients.pop(client_assign_id, None)
         vid_client_socket.close()
 
-def create_opus_encoder():
-    """Creates an Opus encoder context."""
-    container = av.open(format='ogg', mode='w')
-    stream = container.add_stream('opus', RATE)
-    stream.channels = CHANNELS
-    stream.codec_context.sample_rate = RATE
-    stream.codec_context.bit_rate = 32000  # Adjust bitrate if needed
-    return container, stream
-
-def create_opus_decoder():
-    """Creates an Opus decoder context."""
-    container = av.open(format='ogg', mode='r')
-    return container
-
-def encode_audio(opus_encoder, opus_stream, pcm_data):
-    """Encodes PCM audio data using Opus."""
-    frame = av.AudioFrame.from_ndarray(np.frombuffer(pcm_data, dtype=np.int16), format='s16', layout='mono')
-    frame.sample_rate = RATE
-    packet = opus_stream.encode(frame)
-    return packet.to_bytes() if packet else b''
-
-def decode_audio(opus_decoder, opus_packet):
-    """Decodes Opus-encoded audio back to PCM."""
-    packet = av.Packet(opus_packet)
-    opus_decoder.mux(packet)
-    for frame in opus_decoder.decode():
-        return frame.to_ndarray().tobytes()
-    return b''  # Return empty bytes if decoding fails
-
-def audio_stream_handler(client_socket):
-    """Handles audio streaming for a single client with Opus encoding."""
-    global A_clients, audio_data_dict
-
-    opus_decoder = create_opus_decoder()
-    opus_encoder, opus_stream = create_opus_encoder()
-
+def audio_stream_handler(aud_clients,client_counter_id):
     try:
         while True:
-            data = client_socket.recv(1024)  # Adjust buffer size for Opus packets
-            if not data:
-                break  # Client disconnected
+            # Receive the audio header
+            header = aud_clients.recv(4)
+            if not header:
+                break
+            
+            data_length = struct.unpack("!I", header)[0]
+            compressed_data = b""
+            
+            while len(compressed_data) < data_length:
+                packet = aud_clients.recv(data_length - len(compressed_data))
+                if not packet:
+                    print(f"Client {client_counter_id} disconnected unexpectedly.")
+                    return
+                compressed_data += packet
 
-            # Decode incoming Opus data
-            pcm_audio = decode_audio(opus_decoder, data)
-            if not pcm_audio:
-                continue  # Skip if decoding fails
-
+            # Broadcast audio data to all clients except sender
             with A_lock:
-                audio_data_dict[client_socket] = pcm_audio  # Store raw PCM audio
-
-            # Prepare mixed audio excluding this client's own data
-            with A_lock:
-                other_audio = [
-                    data for c, data in audio_data_dict.items() if c != client_socket
-                ]
-
-            mixed_audio = mix_audio(other_audio) if other_audio else b'\x00' * CHUNK * 2
-
-            # Encode mixed audio with Opus
-            opus_encoded_audio = encode_audio(opus_encoder, opus_stream, mixed_audio)
-
-            try:
-                client_socket.sendall(opus_encoded_audio)  # Send Opus-compressed mixed audio
-            except:
-                break  # Client disconnected
-
-    except Exception as e:
-        print(f"⚠️ Error with audio client: {e}")
-
-    finally:
-        with A_lock:
-            if client_socket in A_clients:
-                A_clients.remove(client_socket)
-            if client_socket in audio_data_dict:
-                del audio_data_dict[client_socket]
-        client_socket.close()
-
-def mix_audio(audio_data_list):
-    """Mix multiple audio streams together."""
-    if not audio_data_list:
-        return b'\x00' * CHUNK * 2  # Return silence if no audio
+                for target_id, (target_socket, _) in A_clients.items():
+                    if target_id != client_counter_id:
+                        try:
+                            packet_to_send = struct.pack("!II", client_counter_id, len(compressed_data)) + compressed_data
+                            target_socket.sendall(packet_to_send)
+                        except:
+                            print(f"Failed to send audio to client {target_id}")
     
-    audio_arrays = [np.frombuffer(data, dtype=np.int16).astype(np.float32) for data in audio_data_list]
-    min_length = min(len(arr) for arr in audio_arrays)
-    audio_arrays = [arr[:min_length] for arr in audio_arrays]
+    except ConnectionResetError:
+        print(f"Client {client_counter_id} disconnected forcefully.")
+    finally:
+        # Remove the client
+        with A_lock:
+            if client_counter_id in A_clients:
+                del A_clients[client_counter_id]
+        aud_clients.close()
+#def mix_audio(audio_data_list):
+    # """Mix multiple audio streams together."""
+    # if not audio_data_list:
+    #     return b'\x00' * CHUNK * 2  # Return silence if no audio
+    
+    # audio_arrays = [np.frombuffer(data, dtype=np.int16).astype(np.float32) for data in audio_data_list]
+    # min_length = min(len(arr) for arr in audio_arrays)
+    # audio_arrays = [arr[:min_length] for arr in audio_arrays]
 
-    mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)  # Averaging technique
-    return mixed_audio.tobytes()
+    # mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)  # Averaging technique
+    # return mixed_audio.tobytes()
 
 def start_server():
     """Starts the video and audio servers."""
@@ -173,7 +132,8 @@ def start_server():
     print(f"🎙️ Audio Server started on port {A_PORT}")
 
     client_counter_id = 0
-
+    # threading.Thread(target=audio_stream_handler, daemon=True).start()
+    
     try:
         while True:
             vid_client, vid_addr = video_server.accept()
@@ -187,20 +147,21 @@ def start_server():
 
             with lock:
                 V_clients[client_counter_id] = vid_client
-                A_clients.append(aud_client)
+                A_clients[client_counter_id] = aud_client
 
-            threading.Thread(target=audio_stream_handler, args=(aud_client,), daemon=True).start()
+
+            threading.Thread(target=audio_stream_handler, args=(aud_client,client_counter_id),daemon=True).start()
             threading.Thread(target=video_stream_handler, args=(vid_client, client_counter_id), daemon=True).start()
-
+    
     except KeyboardInterrupt:
         print("🛑 Server is shutting down...")
     finally:
         with lock:
             for V_client_socket in V_clients.values():
                 V_client_socket.close()
+
             for A_client_socket in A_clients:
                 A_client_socket.close()
-
 
 if __name__ == "__main__":
     print(f"🌐 Server listening on {SERVER}")
