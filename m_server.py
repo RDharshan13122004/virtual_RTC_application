@@ -4,26 +4,24 @@ import struct
 import zlib
 import pyaudio
 import numpy as np
-from collections import deque
+import base64
+import time
 
 # Server Configuration
 SERVER = socket.gethostbyname(socket.gethostname())
 V_PORT = 65432
-A_PORT = 12345
+A_PORT = 50007
 V_ADDR = (SERVER, V_PORT)
 A_ADDR = (SERVER, A_PORT)
 
 # Audio Settings
-# FORMAT = pyaudio.paInt16
-# CHANNELS = 1
-# RATE = 32000
-# CHUNK = 128
-
+CHUNK = 1024
 
 V_clients = {}
 A_clients = {}
 lock = threading.Lock()
 A_lock = threading.Lock()
+
 
 def video_stream_handler(vid_client_socket, client_assign_id):
     """Handles video streaming for each client."""
@@ -46,6 +44,7 @@ def video_stream_handler(vid_client_socket, client_assign_id):
             try:
                 decompressed_data = zlib.decompress(frame_data)
             except zlib.error:
+                print(f"[WARNING] Frame decompression failed for client {client_assign_id}: {e}")
                 continue  # Skip corrupted data
             
             with lock:
@@ -70,53 +69,62 @@ def video_stream_handler(vid_client_socket, client_assign_id):
             V_clients.pop(client_assign_id, None)
         vid_client_socket.close()
 
-def audio_stream_handler(aud_clients,client_counter_id):
+def decode_audio(data):
+    try:
+        raw = zlib.decompress(base64.b64decode(data))
+        return np.frombuffer(raw, dtype=np.int16)
+    except:
+        return np.zeros(CHUNK, dtype=np.int16)
+
+def encode_audio(audio_np):
+    compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
+    return base64.b64encode(compressed)
+
+def audio_stream_handler(aud_clients,aud_addr,client_counter_id):
+    print(f"[CONNECTED] Client {client_counter_id} from {aud_addr}")
+    with A_lock:
+        A_clients[client_counter_id] = {'conn': aud_clients, 'audio': None}
+
     try:
         while True:
-            # Receive the audio header
-            header = aud_clients.recv(4)
-            if not header:
+            # 1. Receive audio from client
+            size_data = aud_clients.recv(4)
+            if not size_data:
                 break
-            
-            data_length = struct.unpack("!I", header)[0]
-            compressed_data = b""
-            
-            while len(compressed_data) < data_length:
-                packet = aud_clients.recv(data_length - len(compressed_data))
+            size = struct.unpack('!I', size_data)[0]
+            data = b''
+            while len(data) < size:
+                packet = aud_clients.recv(size - len(data))
                 if not packet:
-                    print(f"Client {client_counter_id} disconnected unexpectedly.")
-                    return
-                compressed_data += packet
+                    break
+                data += packet
 
-            # Broadcast audio data to all clients except sender
+            audio_np = decode_audio(data)
             with A_lock:
-                for target_id, (target_socket, _) in A_clients.items():
-                    if target_id != client_counter_id:
-                        try:
-                            packet_to_send = struct.pack("!II", client_counter_id, len(compressed_data)) + compressed_data
-                            target_socket.sendall(packet_to_send)
-                        except:
-                            print(f"Failed to send audio to client {target_id}")
-    
-    except ConnectionResetError:
-        print(f"Client {client_counter_id} disconnected forcefully.")
+                if client_counter_id in A_clients:
+                    A_clients[client_counter_id]['audio'] = audio_np.copy()
+
+                # 2. Mix other clients' audio
+                mixed = np.zeros(CHUNK, dtype=np.int32)
+                for other_id, info in A_clients.items():
+                    if other_id != client_counter_id and info['audio'] is not None:
+                        mixed += info['audio'].astype(np.int32)
+                mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
+
+            # 3. Send mixed audio back
+            encoded = encode_audio(mixed)
+            size_bytes = struct.pack('!I', len(encoded))
+            aud_clients.sendall(size_bytes + encoded)
+
+            time.sleep(0.01)  # reduce CPU usage
+    except Exception as e:
+        print(f"[ERROR] Client {client_counter_id}: {e}")
     finally:
-        # Remove the client
         with A_lock:
             if client_counter_id in A_clients:
                 del A_clients[client_counter_id]
         aud_clients.close()
-#def mix_audio(audio_data_list):
-    # """Mix multiple audio streams together."""
-    # if not audio_data_list:
-    #     return b'\x00' * CHUNK * 2  # Return silence if no audio
-    
-    # audio_arrays = [np.frombuffer(data, dtype=np.int16).astype(np.float32) for data in audio_data_list]
-    # min_length = min(len(arr) for arr in audio_arrays)
-    # audio_arrays = [arr[:min_length] for arr in audio_arrays]
-
-    # mixed_audio = np.mean(audio_arrays, axis=0).astype(np.int16)  # Averaging technique
-    # return mixed_audio.tobytes()
+        print(f"[DISCONNECTED] Client {client_counter_id} from {aud_addr}")
 
 def start_server():
     """Starts the video and audio servers."""
@@ -147,10 +155,8 @@ def start_server():
 
             with lock:
                 V_clients[client_counter_id] = vid_client
-                A_clients[client_counter_id] = aud_client
 
-
-            threading.Thread(target=audio_stream_handler, args=(aud_client,client_counter_id),daemon=True).start()
+            threading.Thread(target=audio_stream_handler, args=(aud_client,aud_addr,client_counter_id),daemon=True).start()
             threading.Thread(target=video_stream_handler, args=(vid_client, client_counter_id), daemon=True).start()
     
     except KeyboardInterrupt:
@@ -160,8 +166,12 @@ def start_server():
             for V_client_socket in V_clients.values():
                 V_client_socket.close()
 
-            for A_client_socket in A_clients:
-                A_client_socket.close()
+            for a_client_info in A_clients.values():
+                if isinstance(a_client_info, dict):
+                    a_client_info['conn'].close()
+                else:
+                    a_client_info.close()
+
 
 if __name__ == "__main__":
     print(f"🌐 Server listening on {SERVER}")
