@@ -12,7 +12,7 @@ import threading
 import numpy as np
 import pyaudio
 
-SERVER = "192.168.29.60"
+SERVER = "192.168.29.224"
 V_PORT = 65432
 A_PORT = 12345
 VP_ADDR = (SERVER,V_PORT)
@@ -26,15 +26,15 @@ CHUNK = 64
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("img/video-camera.png")
+        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("img/audio.png")
+        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("img/information.png")
+        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -61,10 +61,6 @@ class Meeting():
                 self.client_socket.connect(VP_ADDR)
                 #print("Connected to video server.")
 
-            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
-                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                self.audio_socket.connect(AP_ADDR)
                 #print("Connected to audio server.")
 
             self.toast = ToastNotification(title = "quak join",
@@ -73,6 +69,7 @@ class Meeting():
                                         bootstyle = "success",
                                         alert = True
                                         )
+            self.toast.show_toast()
         except Exception as e:
             #print(f"Error connecting to server: {e}")
             self.toast = ToastNotification(title = "quak join",
@@ -81,13 +78,14 @@ class Meeting():
                                           bootstyle = "danger",
                                           alert = True,
                                           )
+            self.toast.show_toast()
             return            
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")    
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")    
         
         self.name = host_name
 
@@ -215,8 +213,6 @@ class Meeting():
             self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
             self.grid_thread.start()
 
-            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
-            self.Arecv_thread.start()
         except Exception as e:
             print(f"Error starting threads: {e}")
 
@@ -245,6 +241,7 @@ class Meeting():
                                           bootstyle = "success",
                                           alert = True,
                                           )
+                self.toast.show_toast()
 
         except Exception as e:
             #print(f"Error connecting to server: {e}")
@@ -254,6 +251,7 @@ class Meeting():
                                           bootstyle = "danger",
                                           alert = True,
                                           )
+            self.toast.show_toast()
             return
             
         if MC_Sumbit_btn:
@@ -262,7 +260,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
         self.name = part_name
@@ -389,7 +387,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("img/ppico.ico")
+        self.info_pp.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -560,55 +558,14 @@ class Meeting():
 
     def start_stop_audio(self):
         if self.audio_variable.get():
-            if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
-                self.audio_thread.start()
-                self.audio_active = True
-
-        else:
-            if self.audio_stream:
-                self.audio_active = False
+            pass
                     
     def send_audio(self):
-        try:
-            while True:
-                data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                if not self.audio_active:
-                    data = b"\x00" * len(data)  # Send silence if muted
-                compressed_data = zlib.compress(data)
-                packet = struct.pack("!I", len(compressed_data)) + compressed_data
-                self.audio_socket.sendall(packet)
-        except Exception as e:
-            print(f"Audio send error: {e}")
+        pass
 
     def recv_audio(self):
-        buffers = {}  # Store incoming audio per client
-        while True:
-            try:
-                header = self.audio_socket.recv(8)
-                if not header:
-                    break
-                sender_id, data_length = struct.unpack("!II", header)
-                compressed_data = b""
-                while len(compressed_data) < data_length:
-                    packet = self.audio_socket.recv(data_length - len(compressed_data))
-                    if not packet:
-                        return
-                    compressed_data += packet
-                try:
-                    audio_data = zlib.decompress(compressed_data)
-                except zlib.error as e:
-                    print(f"Decompression error: {e}")
-                    continue
-                buffers[sender_id] = np.frombuffer(audio_data, dtype=np.int16)
-                
-                if buffers:
-                    mixed_audio = np.sum(np.array(list(buffers.values())), axis=0, dtype=np.int16)
-                    self.stream.write(mixed_audio.tobytes())
-            except Exception as e:
-                print(f"Audio receive error: {e}")
-                break
-                
+        pass
+
     def end_meeting(self,Close):
         if Close in "End all meeting":
             if hasattr(self,'cap') and self.cap:
@@ -659,7 +616,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("img/ppico.ico")
+root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
 #Meeting obj
 
@@ -671,7 +628,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("img/ppico.ico")
+    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -679,11 +636,11 @@ def connection_pop():
     MC_SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
     MC_SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
 
-    MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
-    MC_Meeting_password_label.pack(padx=40,pady=10)
+    # MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
+    # MC_Meeting_password_label.pack(padx=40,pady=10)
 
-    MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
-    MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
+    # MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
+    # MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
 
     MC_name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     MC_name_entry_label.pack(padx=40,pady=10)
@@ -699,7 +656,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("img/ppico.ico")
+    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -710,11 +667,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("img/video-camera.png") #type: ignore
+app_icon1 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("img/add.png") #type: ignore
+app_icon2 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
