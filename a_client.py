@@ -3,25 +3,26 @@ from tkinter import *
 import ttkbootstrap as tb #type: ignore
 import numpy as np
 from PIL import ImageTk, Image #type: ignore
+from ttkbootstrap.toast import ToastNotification
 from cv2 import *
 import cv2 as cv
 import zlib
 import struct
-import select
 import threading
 import numpy as np
 import pyaudio
+import base64
 
-SERVER = "192.168.29.12"
+SERVER = "192.168.29.224"
 V_PORT = 65432
-A_PORT = 50000 
+A_PORT = 50007
 VP_ADDR = (SERVER,V_PORT)
 AP_ADDR = (SERVER,A_PORT)
 
 A_FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 32000
-CHUNK = 128
+RATE = 44100
+CHUNK = 1024
 
 
 class Meeting():
@@ -38,15 +39,19 @@ class Meeting():
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
+        self.toast = None
         self.received_frame = {}
         self.lock = threading.Lock()
         self.cap = None
         self.client_socket = None
+
         self.audio_socket = None
-
+        self.audio_active = False  # Audio toggle flag
         self.audio_stream = None
+        self.stream = None 
         self.audio = pyaudio.PyAudio()
-
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+        self.stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
 
     def Create_Meeting(self,host_name):
 
@@ -55,24 +60,37 @@ class Meeting():
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect(VP_ADDR)
-                print("Connected to video server.")
+                #print("Connected to video server.")
 
             if not hasattr(self, 'audio_socket') or self.audio_socket is None:
                 self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.audio_socket.connect(AP_ADDR)
-                print("Connected to audio server.")
+                #print("Connected to audio server.")
+
+            self.toast = ToastNotification(title = "quak join",
+                                        message = "Meeting is started",
+                                        duration= 3000,
+                                        bootstyle = "success",
+                                        alert = True
+                                        )
+            self.toast.show_toast()
         except Exception as e:
-            print(f"Error connecting to server: {e}")
-            return        
-        
+            #print(f"Error connecting to server: {e}")
+            self.toast = ToastNotification(title = "quak join",
+                                          message = "Something went wrong",
+                                          duration= 3000,
+                                          bootstyle = "danger",
+                                          alert = True,
+                                          )
+            self.toast.show_toast()
+            return            
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")
-        
+        self.Meeting_root.iconbitmap("img/ppico.ico")    
         
         self.name = host_name
 
@@ -84,7 +102,7 @@ class Meeting():
 
         info_btn = tb.Button(menus_frame,
                              image=self.info_image,
-                             #command=
+                             command= self.info_pop,
                              bootstyle = "success"
                              )
         info_btn.pack(pady=20,padx=30)
@@ -149,7 +167,8 @@ class Meeting():
                                value= False,
                                background="#d4342b",
                                foreground="#f8dedd",
-                               font=('Arial Rounded MT Bold',14)
+                               font=('Arial Rounded MT Bold',14),
+                               command = self.start_stop_audio
                                )
         
         close_menu = tb.Menu(Close_meeting, tearoff=0)
@@ -184,7 +203,6 @@ class Meeting():
         video_alignment_frame2 = tb.Frame(container_frame)
         video_alignment_frame2.pack(pady=5)
 
-
         self.recv_video_label2 = tb.Label(video_alignment_frame2)
         self.recv_video_label2.pack(pady=5,padx=5,side="left")
 
@@ -210,6 +228,39 @@ class Meeting():
         
 
     def connecting_meeting(self,part_name):
+
+        try:
+            if not hasattr(self, 'client_socket') or self.client_socket is None:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                self.client_socket.connect((MC_SERVER_IP_entry.get(),V_PORT))
+                #print("Connected to video server.")
+
+            if not hasattr(self, 'audio_socket') or self.audio_socket is None:
+                self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.audio_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.audio_socket.connect((MC_SERVER_IP_entry.get(),A_PORT))
+                #print("Connected to audio server.")
+
+                self.toast = ToastNotification(title = "quak join",
+                                          message = "Meeting is started",
+                                          duration= 3000,
+                                          bootstyle = "success",
+                                          alert = True,
+                                          )
+                self.toast.show_toast()
+
+        except Exception as e:
+            #print(f"Error connecting to server: {e}")
+            self.toast = ToastNotification(title = "quak join",
+                                          message = "Something went wrong",
+                                          duration= 3000,
+                                          bootstyle = "danger",
+                                          alert = True,
+                                          )
+            self.toast.show_toast()
+            return
+            
         if MC_Sumbit_btn:
             con_pop.destroy()
 
@@ -230,7 +281,7 @@ class Meeting():
 
         info_btn = tb.Button(menus_frame,
                              image= self.info_image,
-                             #command=
+                             command= self.info_pop,
                              bootstyle = "success"
                              )
         info_btn.pack(pady=10,padx=30)
@@ -259,7 +310,8 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command= self.start_stop_video
                               )
 
         menu1.add_radiobutton(label="Off",
@@ -267,7 +319,8 @@ class Meeting():
                               value= False,
                               background="#d4342b",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command= self.start_stop_video
                               )
         
         menu2 = tb.Menu(audio_menu, tearoff=0)
@@ -276,13 +329,17 @@ class Meeting():
                               value= True,
                               background="#06f912",
                               foreground="#f8dedd",
-                              font=('Arial Rounded MT Bold',14)
+                              font=('Arial Rounded MT Bold',14),
+                              command = self.start_stop_audio
                               )
         
         menu2.add_radiobutton(label="Mute",
+                               variable= self.audio_variable,
+                               value= False,
                                background="#d4342b",
                                foreground="#f8dedd",
-                               font=('Arial Rounded MT Bold',14)
+                               font=('Arial Rounded MT Bold',14),
+                               command = self.start_stop_audio
                                )
         
         style = tb.Style()
@@ -318,9 +375,33 @@ class Meeting():
         self.recv_video_label3 = tb.Label(video_alignment_frame2)
         self.recv_video_label3.pack(pady=5,padx=5,side="left")
 
+        self.update_blank_frame()
+
+        try:
+            self.recv_thread = threading.Thread(target=self.recv_video, daemon=True)
+            self.recv_thread.start()
+
+            self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
+            self.grid_thread.start()
+
+            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
+            self.Arecv_thread.start()
+        except Exception as e:
+            print(f"Error starting threads: {e}")
+
         btn1.config(state=DISABLED)
         btn2.config(state=DISABLED)
     
+    def info_pop(self):
+        self.info_pp = tb.Toplevel(title="",position=(0,0))
+        self.info_pp.iconbitmap("img/ppico.ico")
+
+        self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
+        self.info_server_id_label.pack(padx=10,pady=10)
+
+        self.info_meeting_password_label = tb.Label(self.info_pp,text=f"🔐: frgtyh",bootstyle= "success", font=("Rockwell Extra Bold",18))
+        self.info_meeting_password_label.pack(padx=10,pady=10)
+
     def start_stop_video(self):   
         if self.video_variable.get():
 
@@ -482,114 +563,96 @@ class Meeting():
         
         self.recv_video_label.after(10,self.display_recv_frame)
 
+    def encode_audio(self,audio_np):
+        compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
+        return base64.b64encode(compressed)
+    
+    def decode_audio(self,data):    
+        decompressed = zlib.decompress(base64.b64decode(data))
+        return np.frombuffer(decompressed, dtype=np.int16)
+    
     def start_stop_audio(self):
         if self.audio_variable.get():
-            if not hasattr(self,'audio_thread') or not self.audio_thread.is_alive():
+            # Start audio sending
+            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_sending = True  # custom flag to control loop
                 self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
                 self.audio_thread.start()
-
         else:
-            if hasattr(self,'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
+            # Stop audio sending
+            self.audio_sending = False
 
-            if hasattr(self, 'audio_socket') and self.audio_socket:
-                self.audio_socket.close()
-                self.audio_socket = None
-                    
     def send_audio(self):
-        try:
-            self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
-            while self.audio_variable.get():
-                try:
+        while True:
+            try:
+                if self.audio_sending:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                    if self.audio_socket:
-                        self.audio_socket.sendall(data)
-                except (socket.error, BrokenPipeError, ConnectionResetError) as e:
-                    print(f"Audio send error: {e}")
-                    break
-        except Exception as e: 
-            print(f"❌ Error initializing audio stream: {e}")
-        finally:
-            if hasattr(self, 'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
+                    audio_np = np.frombuffer(data, dtype=np.int16)
+                else:
+                    audio_np = np.zeros(CHUNK, dtype=np.int16)
+                encoded = self.encode_audio(audio_np)
+                size = struct.pack('!I', len(encoded))
+                self.audio_socket.sendall(size + encoded)
+            except Exception as e:
+                print(f"Error on sending audio: {e}")
+                break
 
     def recv_audio(self):
-        try:
-            stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
-
-            while True:
-                try:
-                    if not self.audio_socket:
-                        break
-
-                    # 🔹 Use select() to check for data without blocking
-                    ready, _, _ = select.select([self.audio_socket], [], [], 0.1)
-                    if ready:
-                        data = self.audio_socket.recv(CHUNK * 2)
-                        if not data:
-                            break
-
-                        stream.write(data)  # 🔹 Always play incoming audio, regardless of mute status
-
-                except (socket.error, ConnectionResetError) as e:
-                    print(f"Audio receive error: {e}")
+        while True:
+            try:
+                size_data = self.audio_socket.recv(4)
+                if not size_data:
                     break
+                size = struct.unpack('!I', size_data)[0]
+                data = b''
+                while len(data) < size:
+                    packet = self.audio_socket.recv(size - len(data))
+                    if not packet:
+                        break
+                    data += packet
 
-        except Exception as e:
-            print(f"❌ Error initializing audio stream: {e}")
-        finally:
-            if stream:
-                stream.stop_stream()
-                stream.close()
+                audio_np = self.decode_audio(data)
+                self.stream.write(audio_np.tobytes())
+            except Exception as e:
+                print(f"Error on receiving audio: {e}")
+                break
 
-    def end_meeting(self,Close):
-        if Close in "End all meeting":
-            if hasattr(self,'cap') and self.cap:
+    def end_meeting(self, Close):
+        if Close in ("End all meeting", "End meeting"):
+            if hasattr(self, 'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
-            if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
+
+            if hasattr(self, 'send_thread') and self.send_thread.is_alive():
                 self.send_thread.join()
-            if not hasattr(self, 'recv_thread') or not self.recv_thread.is_alive():
-                self.recv_thread.join()  
-            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+            if hasattr(self, 'recv_thread') and self.recv_thread.is_alive():
+                self.recv_thread.join()
+            if hasattr(self, 'audio_thread') and self.audio_thread.is_alive():
                 self.audio_thread.join()
-            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
-                self.Arecv_thread.join() 
-            if not hasattr(self, 'grid_thread') or not self.grid_thread.is_alive():
-                self.grid_thread.join() 
-            if hasattr(self,'client_socket') and self.client_socket:
+            if hasattr(self, 'Arecv_thread') and self.Arecv_thread.is_alive():
+                self.Arecv_thread.join()
+            if hasattr(self, 'grid_thread') and self.grid_thread.is_alive():
+                self.grid_thread.join()
+
+            if hasattr(self, 'client_socket') and self.client_socket:
+                try:
+                    self.client_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
                 self.client_socket.close()
-            if hasattr(self,'audio_socket') and self.audio_socket:
+
+            if hasattr(self, 'audio_socket') and self.audio_socket:
+                try:
+                    self.audio_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
                 self.audio_socket.close()
+                self.audio_socket = None
+
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
 
-        if Close in "End meeting":
-            if hasattr(self,'cap') and self.cap:
-                self.cap.release()
-                self.cap = None
-            if not hasattr(self, 'send_thread') or not self.send_thread.is_alive():
-                self.send_thread.join()
-            if not hasattr(self, 'recv_thread') or not self.recv_thread.is_alive():
-                self.recv_thread.join()  
-            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_thread.join()
-            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
-                self.Arecv_thread.join() 
-            if not hasattr(self, 'grid_thread') or not self.grid_thread.is_alive():
-                self.grid_thread.join() 
-            if hasattr(self,'client_socket') and self.client_socket:
-                self.client_socket.close()
-            if hasattr(self,'audio_socket') and self.audio_socket:
-                self.audio_socket.close()
-            self.Meeting_root.destroy()
-            btn1.config(state=NORMAL)
-            btn2.config(state=NORMAL)
 
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
@@ -603,7 +666,7 @@ meeting = Meeting()
 #function
 
 def connection_pop():
-    global con_pop, MC_Sumbit_btn
+    global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
     con_pop.iconbitmap("img/ppico.ico")
@@ -614,11 +677,11 @@ def connection_pop():
     MC_SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
     MC_SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
 
-    MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
-    MC_Meeting_password_label.pack(padx=40,pady=10)
+    # MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
+    # MC_Meeting_password_label.pack(padx=40,pady=10)
 
-    MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
-    MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
+    # MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
+    # MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
 
     MC_name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     MC_name_entry_label.pack(padx=40,pady=10)
