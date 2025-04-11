@@ -91,7 +91,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("ppico.ico")    
+        self.Meeting_root.iconbitmap("img/ppico.ico")    
         
         self.name = host_name
 
@@ -268,7 +268,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("ppico.ico")
+        self.Meeting_root.iconbitmap("img/ppico.ico")
         
         
         self.name = part_name
@@ -395,7 +395,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("ppico.ico")
+        self.info_pp.iconbitmap("img/ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -677,7 +677,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("ppico.ico")
+root.iconbitmap("img/ppico.ico")
 
 #Meeting obj
 
@@ -689,7 +689,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("ppico.ico")
+    con_pop.iconbitmap("img/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -717,7 +717,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("ppico.ico")
+    HNE_name_pop.iconbitmap("img/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
