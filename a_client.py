@@ -12,8 +12,9 @@ import threading
 import numpy as np
 import pyaudio
 import base64
+import time
 
-SERVER = "192.168.29.224"
+SERVER = "192.168.29.60"
 V_PORT = 65432
 A_PORT = 50007
 VP_ADDR = (SERVER,V_PORT)
@@ -90,7 +91,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")    
+        self.Meeting_root.iconbitmap("ppico.ico")    
         
         self.name = host_name
 
@@ -267,7 +268,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("ppico.ico")
         
         
         self.name = part_name
@@ -394,7 +395,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("img/ppico.ico")
+        self.info_pp.iconbitmap("ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -588,11 +589,27 @@ class Meeting():
                 if self.audio_sending:
                     data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
                     audio_np = np.frombuffer(data, dtype=np.int16)
+                    
+                    # Only send audio if it's not silence (prevent sending zeros when not speaking)
+                    if np.abs(audio_np).max() > 500:  # Threshold for detecting actual speech
+                        encoded = self.encode_audio(audio_np)
+                        size = struct.pack('!I', len(encoded))
+                        self.audio_socket.sendall(size + encoded)
+                    else:
+                        # Send a very small amount of near-silence to keep the connection active
+                        silent_np = np.random.randint(-10, 10, CHUNK, dtype=np.int16)
+                        encoded = self.encode_audio(silent_np)
+                        size = struct.pack('!I', len(encoded))
+                        self.audio_socket.sendall(size + encoded)
                 else:
-                    audio_np = np.zeros(CHUNK, dtype=np.int16)
-                encoded = self.encode_audio(audio_np)
-                size = struct.pack('!I', len(encoded))
-                self.audio_socket.sendall(size + encoded)
+                    # When muted, send a special "muted" packet or very low-volume noise
+                    silent_np = np.zeros(CHUNK, dtype=np.int16)
+                    encoded = self.encode_audio(silent_np)
+                    size = struct.pack('!I', len(encoded))
+                    self.audio_socket.sendall(size + encoded)
+                    
+                time.sleep(0.01)  # Small delay to prevent CPU overuse
+                    
             except Exception as e:
                 print(f"Error on sending audio: {e}")
                 break
@@ -612,11 +629,14 @@ class Meeting():
                     data += packet
 
                 audio_np = self.decode_audio(data)
-                self.stream.write(audio_np.tobytes())
+                
+                # Only play audio if it's not complete silence
+                if np.abs(audio_np).max() > 50:  # Lower threshold for playing
+                    self.stream.write(audio_np.tobytes())
+                    
             except Exception as e:
                 print(f"Error on receiving audio: {e}")
                 break
-
     def end_meeting(self, Close):
         if Close in ("End all meeting", "End meeting"):
             if hasattr(self, 'cap') and self.cap:
@@ -657,7 +677,7 @@ class Meeting():
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("img/ppico.ico")
+root.iconbitmap("ppico.ico")
 
 #Meeting obj
 
@@ -669,7 +689,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("img/ppico.ico")
+    con_pop.iconbitmap("ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -697,7 +717,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("img/ppico.ico")
+    HNE_name_pop.iconbitmap("ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 

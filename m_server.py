@@ -15,7 +15,11 @@ V_ADDR = (SERVER, V_PORT)
 A_ADDR = (SERVER, A_PORT)
 
 # Audio Settings
+# FORMAT = pyaudio.paInt16
+# CHANNELS = 1
+# RATE = 32000
 CHUNK = 1024
+
 
 V_clients = {}
 A_clients = {}
@@ -80,52 +84,73 @@ def encode_audio(audio_np):
     compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
     return base64.b64encode(compressed)
 
-def audio_stream_handler(aud_clients,aud_addr,client_counter_id):
+def audio_stream_handler(aud_client, aud_addr, client_counter_id):
     print(f"[CONNECTED] Client {client_counter_id} from {aud_addr}")
     with A_lock:
-        A_clients[client_counter_id] = {'conn': aud_clients, 'audio': None}
+        A_clients[client_counter_id] = {'conn': aud_client, 'audio': None}
 
     try:
         while True:
             # 1. Receive audio from client
-            size_data = aud_clients.recv(4)
+            size_data = aud_client.recv(4)
             if not size_data:
                 break
             size = struct.unpack('!I', size_data)[0]
             data = b''
             while len(data) < size:
-                packet = aud_clients.recv(size - len(data))
+                packet = aud_client.recv(size - len(data))
                 if not packet:
                     break
                 data += packet
 
+            # Store this client's audio
             audio_np = decode_audio(data)
             with A_lock:
+                # Update this client's audio in the dictionary
                 if client_counter_id in A_clients:
                     A_clients[client_counter_id]['audio'] = audio_np.copy()
 
-                # 2. Mix other clients' audio
+                # Create a mixed audio stream for this client (excluding their own audio)
                 mixed = np.zeros(CHUNK, dtype=np.int32)
+                active_speakers = 0
+                
                 for other_id, info in A_clients.items():
                     if other_id != client_counter_id and info['audio'] is not None:
-                        mixed += info['audio'].astype(np.int32)
+                        # Only mix in audio that has actual sound (not just silence)
+                        audio_level = np.abs(info['audio']).max()
+                        if audio_level > 500:  # Threshold to detect active speech
+                            mixed += info['audio'].astype(np.int32)
+                            active_speakers += 1
+                
+                # Only normalize if we have multiple speakers to prevent division by zero
+                if active_speakers > 1:
+                    mixed = (mixed / active_speakers).astype(np.int32)
+                
                 mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
+                
+                # Only send back audio if there's something to hear
+                if np.abs(mixed).max() > 50 or active_speakers > 0:
+                    encoded = encode_audio(mixed)
+                    size_bytes = struct.pack('!I', len(encoded))
+                    aud_client.sendall(size_bytes + encoded)
+                else:
+                    # Send a minimal packet to keep the connection alive
+                    minimal_silence = np.zeros(10, dtype=np.int16)
+                    encoded = encode_audio(minimal_silence)
+                    size_bytes = struct.pack('!I', len(encoded))
+                    aud_client.sendall(size_bytes + encoded)
 
-            # 3. Send mixed audio back
-            encoded = encode_audio(mixed)
-            size_bytes = struct.pack('!I', len(encoded))
-            aud_clients.sendall(size_bytes + encoded)
-
-            time.sleep(0.01)  # reduce CPU usage
+            time.sleep(0.01)  # Reduce CPU usage
+            
     except Exception as e:
         print(f"[ERROR] Client {client_counter_id}: {e}")
     finally:
         with A_lock:
             if client_counter_id in A_clients:
                 del A_clients[client_counter_id]
-        aud_clients.close()
+        aud_client.close()
         print(f"[DISCONNECTED] Client {client_counter_id} from {aud_addr}")
-
+        
 def start_server():
     """Starts the video and audio servers."""
     video_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
