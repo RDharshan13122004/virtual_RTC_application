@@ -80,50 +80,61 @@ def encode_audio(audio_np):
     compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
     return base64.b64encode(compressed)
 
-def audio_stream_handler(aud_clients,aud_addr,client_counter_id):
+def audio_stream_handler(aud_client, aud_addr, client_counter_id):
     print(f"[CONNECTED] Client {client_counter_id} from {aud_addr}")
     with A_lock:
-        A_clients[client_counter_id] = {'conn': aud_clients, 'audio': None}
+        A_clients[client_counter_id] = {'conn': aud_client, 'audio': np.zeros(CHUNK, dtype=np.int16)}
 
     try:
         while True:
-            # 1. Receive audio from client
-            size_data = aud_clients.recv(4)
-            if not size_data:
+            # Receive audio from client
+            size_data = aud_client.recv(4)
+            if not size_data or len(size_data) < 4:
                 break
+                
             size = struct.unpack('!I', size_data)[0]
             data = b''
             while len(data) < size:
-                packet = aud_clients.recv(size - len(data))
+                packet = aud_client.recv(size - len(data))
                 if not packet:
                     break
                 data += packet
-
-            audio_np = decode_audio(data)
-            with A_lock:
-                if client_counter_id in A_clients:
-                    A_clients[client_counter_id]['audio'] = audio_np.copy()
-
-                # 2. Mix other clients' audio
-                mixed = np.zeros(CHUNK, dtype=np.int32)
-                for other_id, info in A_clients.items():
-                    if other_id != client_counter_id and info['audio'] is not None:
-                        mixed += info['audio'].astype(np.int32)
-                mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
-
-            # 3. Send mixed audio back
-            encoded = encode_audio(mixed)
-            size_bytes = struct.pack('!I', len(encoded))
-            aud_clients.sendall(size_bytes + encoded)
-
-            time.sleep(0.01)  # reduce CPU usage
+                
+            if len(data) < size:
+                print(f"Incomplete audio data from client {client_counter_id}")
+                continue
+                
+            # Store client's audio
+            try:
+                audio_np = decode_audio(data)
+                with A_lock:
+                    if client_counter_id in A_clients:
+                        A_clients[client_counter_id]['audio'] = audio_np
+                    
+                    # Create mixed audio for this client (excluding their own audio)
+                    mixed = np.zeros(CHUNK, dtype=np.int32)
+                    for other_id, info in A_clients.items():
+                        if other_id != client_counter_id and 'audio' in info:
+                            mixed += info['audio'].astype(np.int32)
+                    
+                    # Clip to prevent overflow and convert back to int16
+                    mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
+                
+                # Send mixed audio back to client
+                encoded = encode_audio(mixed)
+                size_bytes = struct.pack('!I', len(encoded))
+                aud_client.sendall(size_bytes + encoded)
+                
+            except Exception as e:
+                print(f"Error processing audio for client {client_counter_id}: {e}")
+                
     except Exception as e:
         print(f"[ERROR] Client {client_counter_id}: {e}")
     finally:
         with A_lock:
             if client_counter_id in A_clients:
                 del A_clients[client_counter_id]
-        aud_clients.close()
+        aud_client.close()
         print(f"[DISCONNECTED] Client {client_counter_id} from {aud_addr}")
 
 def start_server():
