@@ -14,7 +14,7 @@ import pyaudio
 import base64
 import time
 
-SERVER = "192.168.29.224"
+SERVER = "192.168.29.60"
 V_PORT = 65432
 A_PORT = 50007
 VP_ADDR = (SERVER,V_PORT)
@@ -28,15 +28,15 @@ CHUNK = 1024
 
 class Meeting():
     def __init__(self):
-        self.video_image = Image.open("img/video-camera.png")
+        self.video_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png")
         resize_video_image = self.video_image.resize((35,35))
         self.video_image = ImageTk.PhotoImage(resize_video_image)
 
-        self.audio_image = Image.open("img/audio.png")
+        self.audio_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/audio.png")
         resize_audio_image = self.audio_image.resize((35,35))
         self.audio_image = ImageTk.PhotoImage(resize_audio_image) 
 
-        self.info_image = Image.open("img/information.png")
+        self.info_image = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/information.png")
         resize_info_image = self.info_image.resize((35,35))
         self.info_image = ImageTk.PhotoImage(resize_info_image)
 
@@ -79,6 +79,10 @@ class Meeting():
                 frames_per_buffer=CHUNK
             )
             print("Audio streams successfully initialized")
+
+            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
+                self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
+                self.Arecv_thread.start()
         except Exception as e:
             print(f"Error setting up audio streams: {e}")
 
@@ -121,7 +125,7 @@ class Meeting():
             HNE_name_pop.destroy()
 
         self.Meeting_root = tb.Toplevel(title="meeting",position=(0,0))
-        self.Meeting_root.iconbitmap("img/ppico.ico")    
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")    
         
         self.name = host_name
 
@@ -249,8 +253,8 @@ class Meeting():
             self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
             self.grid_thread.start()
 
-            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
-            self.Arecv_thread.start()
+            self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
+            self.audio_thread.start()
         except Exception as e:
             print(f"Error starting threads: {e}")
 
@@ -300,7 +304,7 @@ class Meeting():
         self.Meeting_root = tb.Toplevel(title="meeting",
                                         position= (0,0)
                                         )
-        self.Meeting_root.iconbitmap("img/ppico.ico")
+        self.Meeting_root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
         
         
         self.name = part_name
@@ -427,7 +431,7 @@ class Meeting():
     
     def info_pop(self):
         self.info_pp = tb.Toplevel(title="",position=(0,0))
-        self.info_pp.iconbitmap("img/ppico.ico")
+        self.info_pp.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
         self.info_server_id_label = tb.Label(self.info_pp,text=f"🛰️{SERVER}",bootstyle = "warning", font=("Rockwell Extra Bold",18))
         self.info_server_id_label.pack(padx=10,pady=10)
@@ -596,70 +600,77 @@ class Meeting():
         
         self.recv_video_label.after(10,self.display_recv_frame)
 
-    def encode_audio(self,audio_np):
-        compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
+    def encode_audio(self, audio_np):
+        """Compress and encode audio data for transmission"""
+        compressed = zlib.compress(audio_np.tobytes())
         return base64.b64encode(compressed)
-    
-    def decode_audio(self,data):    
-        decompressed = zlib.decompress(base64.b64decode(data))
-        return np.frombuffer(decompressed, dtype=np.int16)
-    
+
+    def decode_audio(self, data):
+        """Decode and decompress received audio data"""
+        try:
+            raw = zlib.decompress(base64.b64decode(data))
+            return np.frombuffer(raw, dtype=np.int16)
+        except Exception as e:
+            print(f"Error decoding audio: {e}")
+            return np.zeros(CHUNK, dtype=np.int16)
+
     def start_stop_audio(self):
+        """Toggle audio sending on/off"""
         if self.audio_variable.get():
             # Starting audio
             print("Unmuting audio")
             self.audio_sending = True
-            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
-                self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
-                self.audio_thread.start()
         else:
             # Stopping audio
             print("Muting audio")
             self.audio_sending = False
-            # Don't stop the thread, just send silent frames
+            # We don't stop the thread, just stop sending real audio
 
     def send_audio(self):
+        """Thread function to continuously send audio to the server"""
         print("Audio sending thread started")
         try:
-            while True:
-                if hasattr(self, 'audio_socket') and self.audio_socket:
-                    try:
-                        if self.audio_sending and hasattr(self, 'audio_stream') and self.audio_stream:
-                            # Read real audio data when unmuted
-                            data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                            audio_np = np.frombuffer(data, dtype=np.int16)
-                        else:
-                            # Send silent frames when muted
-                            audio_np = np.zeros(CHUNK, dtype=np.int16)
-                        
-                        # Encode and send
-                        encoded = self.encode_audio(audio_np)
-                        size = struct.pack('!I', len(encoded))
-                        self.audio_socket.sendall(size + encoded)
-                        
-                        # Brief pause to control rate
-                        time.sleep(0.01)
-                    except Exception as e:
-                        print(f"Error sending audio: {e}")
-                        break
-                else:
-                    # Socket closed or not available
+            while hasattr(self, 'audio_socket') and self.audio_socket:
+                try:
+                    if self.audio_sending and hasattr(self, 'audio_stream') and self.audio_stream:
+                        # Read real audio data when unmuted
+                        data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                        audio_np = np.frombuffer(data, dtype=np.int16)
+                    else:
+                        # Send silent frames when muted
+                        audio_np = np.zeros(CHUNK, dtype=np.int16)
+                    
+                    # Encode and send
+                    encoded = self.encode_audio(audio_np)
+                    size = struct.pack('!I', len(encoded))
+                    self.audio_socket.sendall(size + encoded)
+                    
+                    # Brief pause to control sending rate
+                    time.sleep(0.01)
+                except Exception as e:
+                    print(f"Error sending audio: {e}")
                     break
         except Exception as e:
             print(f"Audio sending thread error: {e}")
         print("Audio sending thread ended")
 
     def recv_audio(self):
+        """Thread function to continuously receive and play audio from the server"""
         print("Audio receiving thread started")
+        
         try:
             while hasattr(self, 'audio_socket') and self.audio_socket:
                 try:
+                    # Read size header
                     size_data = self.audio_socket.recv(4)
-                    if not size_data:
+                    if not size_data or len(size_data) < 4:
                         print("No data received from audio socket")
                         break
                         
+                    # Get the expected data size
                     size = struct.unpack('!I', size_data)[0]
+                    
+                    # Read the full audio packet
                     data = b''
                     while len(data) < size:
                         packet = self.audio_socket.recv(size - len(data))
@@ -671,77 +682,82 @@ class Meeting():
                         print(f"Incomplete audio data received: {len(data)}/{size}")
                         continue
                     
+                    # Decode and play the audio
                     audio_np = self.decode_audio(data)
+                    
+                    # Always play the received audio, regardless of mic status
                     if hasattr(self, 'stream') and self.stream:
                         self.stream.write(audio_np.tobytes())
+                        
                 except Exception as e:
                     print(f"Error receiving audio: {e}")
-                    break
+                    time.sleep(0.1)  # Pause briefly to prevent tight loop on error
+                    continue
         except Exception as e:
             print(f"Audio receiving thread error: {e}")
         print("Audio receiving thread ended")
 
-def end_meeting(self, Close):
-    if Close in ("End all meeting", "End meeting"):
-        print("Ending meeting...")
-        # Stop sending audio
-        self.audio_sending = False
-        
-        # Release camera
-        if hasattr(self, 'cap') and self.cap:
-            self.cap.release()
-            self.cap = None
-        
-        # Close audio streams properly
-        try:
-            if hasattr(self, 'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
+    def end_meeting(self, Close):
+        if Close in ("End all meeting", "End meeting"):
+            print("Ending meeting...")
+            # Stop sending audio
+            self.audio_sending = False
             
-            if hasattr(self, 'stream') and self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-                self.stream = None
-        except Exception as e:
-            print(f"Error closing audio streams: {e}")
-        
-        # Close sockets
-        if hasattr(self, 'client_socket') and self.client_socket:
+            # Release camera
+            if hasattr(self, 'cap') and self.cap:
+                self.cap.release()
+                self.cap = None
+            
+            # Close audio streams properly
             try:
-                self.client_socket.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.client_socket.close()
-            self.client_socket = None
+                if hasattr(self, 'audio_stream') and self.audio_stream:
+                    self.audio_stream.stop_stream()
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                
+                if hasattr(self, 'stream') and self.stream:
+                    self.stream.stop_stream()
+                    self.stream.close()
+                    self.stream = None
+            except Exception as e:
+                print(f"Error closing audio streams: {e}")
+            
+            # Close sockets
+            if hasattr(self, 'client_socket') and self.client_socket:
+                try:
+                    self.client_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.client_socket.close()
+                self.client_socket = None
 
-        if hasattr(self, 'audio_socket') and self.audio_socket:
-            try:
-                self.audio_socket.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.audio_socket.close()
-            self.audio_socket = None
+            if hasattr(self, 'audio_socket') and self.audio_socket:
+                try:
+                    self.audio_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.audio_socket.close()
+                self.audio_socket = None
 
-        # Close the meeting window
-        self.Meeting_root.destroy()
-        btn1.config(state=NORMAL)
-        btn2.config(state=NORMAL)
-        
-        # Show toast notification
-        self.toast = ToastNotification(title = "quak join",
-                                        message = "Meeting ended",
-                                        duration= 3000,
-                                        bootstyle = "danger",
-                                        alert = True,
-                                        )
-        self.toast.show_toast()
+            # Close the meeting window
+            self.Meeting_root.destroy()
+            btn1.config(state=NORMAL)
+            btn2.config(state=NORMAL)
+            
+            # Show toast notification
+            self.toast = ToastNotification(title = "quak join",
+                                            message = "Meeting ended",
+                                            duration= 3000,
+                                            bootstyle = "danger",
+                                            alert = True,
+                                            )
+            self.toast.show_toast()
 
 
 #GUI Creation
 root = tb.Window(title="quak join",themename="morph",size=(800,400))
 
-root.iconbitmap("img/ppico.ico")
+root.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
 #Meeting obj
 
@@ -753,7 +769,7 @@ def connection_pop():
     global con_pop, MC_Sumbit_btn, MC_SERVER_IP_entry, MC_Meeting_password_entry
 
     con_pop = tb.Toplevel(size=(600,450))
-    con_pop.iconbitmap("img/ppico.ico")
+    con_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
 
     MC_SERVER_IP_label = tb.Label(con_pop,text="Enter the ID of the meeting:",font=("Rockwell Extra Bold",18))
     MC_SERVER_IP_label.pack(padx=40,pady=10)
@@ -781,7 +797,7 @@ def host_name_entry():
     global HNE_name_pop, HNE_Sumbit_btn
 
     HNE_name_pop = tb.Toplevel(size=(600,250))
-    HNE_name_pop.iconbitmap("img/ppico.ico")
+    HNE_name_pop.iconbitmap("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/ppico.ico")
     HNE_name_entry_label = tb.Label(HNE_name_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     HNE_name_entry_label.pack(padx=40,pady=10)
 
@@ -792,11 +808,11 @@ def host_name_entry():
     HNE_Sumbit_btn.pack(padx=10,pady=20)
 
 
-app_icon1 = Image.open("img/video-camera.png") #type: ignore
+app_icon1 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/video-camera.png") #type: ignore
 resize_app_icon1 = app_icon1.resize((35,35))
 meeting_icon = ImageTk.PhotoImage(resize_app_icon1)
 
-app_icon2 = Image.open("img/add.png") #type: ignore
+app_icon2 = Image.open("C:/Users/dharshan/Desktop/lang and tools/pyvsc/final_year_project/img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
