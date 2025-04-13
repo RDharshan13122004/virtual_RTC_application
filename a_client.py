@@ -628,20 +628,19 @@ class Meeting():
             # We don't stop the thread, just stop sending real audio
 
     def send_audio(self):
-        """Thread function to continuously send audio to the server"""
         print("Audio sending thread started")
         try:
             while hasattr(self, 'audio_socket') and self.audio_socket:
                 try:
+                    # Always send audio frames, just send silence when muted
                     if self.audio_sending and hasattr(self, 'audio_stream') and self.audio_stream:
-                        # Read real audio data when unmuted
                         data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
                         audio_np = np.frombuffer(data, dtype=np.int16)
                     else:
                         # Send silent frames when muted
                         audio_np = np.zeros(CHUNK, dtype=np.int16)
                     
-                    # Encode and send
+                    # Always encode and send (silent or real audio)
                     encoded = self.encode_audio(audio_np)
                     size = struct.pack('!I', len(encoded))
                     self.audio_socket.sendall(size + encoded)
@@ -654,7 +653,7 @@ class Meeting():
         except Exception as e:
             print(f"Audio sending thread error: {e}")
         print("Audio sending thread ended")
-
+        
     def recv_audio(self):
         """Thread function to continuously receive and play audio from the server"""
         print("Audio receiving thread started")

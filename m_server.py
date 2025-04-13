@@ -113,10 +113,16 @@ def audio_stream_handler(aud_client, aud_addr, client_counter_id):
                     
                     # Create mixed audio for this client (excluding their own audio)
                     mixed = np.zeros(CHUNK, dtype=np.int32)
+                    active_audio = False
+                    
                     for other_id, info in A_clients.items():
                         if other_id != client_counter_id and 'audio' in info:
+                            # Check if the audio is not all zeros (silence)
+                            if np.any(info['audio']):
+                                active_audio = True
                             mixed += info['audio'].astype(np.int32)
                     
+                    # Always send the mixed audio, even if it's silence
                     # Clip to prevent overflow and convert back to int16
                     mixed = np.clip(mixed, -32768, 32767).astype(np.int16)
                 
