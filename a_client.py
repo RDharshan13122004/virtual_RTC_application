@@ -80,9 +80,7 @@ class Meeting():
             )
             print("Audio streams successfully initialized")
 
-            if not hasattr(self, 'Arecv_thread') or not self.Arecv_thread.is_alive():
-                self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
-                self.Arecv_thread.start()
+            
         except Exception as e:
             print(f"Error setting up audio streams: {e}")
 
@@ -255,6 +253,9 @@ class Meeting():
 
             self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
             self.audio_thread.start()
+
+            self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
+            self.Arecv_thread.start()
         except Exception as e:
             print(f"Error starting threads: {e}")
 
@@ -691,8 +692,7 @@ class Meeting():
                         
                 except Exception as e:
                     print(f"Error receiving audio: {e}")
-                    time.sleep(0.1)  # Pause briefly to prevent tight loop on error
-                    continue
+                    break
         except Exception as e:
             print(f"Audio receiving thread error: {e}")
         print("Audio receiving thread ended")
