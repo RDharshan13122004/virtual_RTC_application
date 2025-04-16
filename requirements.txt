@@ -1,0 +1,5 @@
+opencv-python
+pyaudio
+numpy
+ttkbootstrap
+pillow
