@@ -60,7 +60,7 @@
 
     ```bash
     python client.py
-    
+    ```
     - Click "Create a Meeting" and enter your name.
 
 3. **Join a Meeting**
@@ -71,7 +71,7 @@
 4. **In-Meeting Controls**
     - Toggle Audio/Video: Mute/unmute audio or start/stop video.
 
-    -End Meeting: Click "End Meeting" to leave the session.
+    - End Meeting: Click "End Meeting" to leave the session.
 
 ## 📁 File Structure
 
