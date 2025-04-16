@@ -14,7 +14,7 @@ import pyaudio
 import base64
 import time
 
-SERVER = "192.168.29.224"
+SERVER = "" #Entry ur server IP Address
 V_PORT = 65432
 A_PORT = 50007
 VP_ADDR = (SERVER,V_PORT)
