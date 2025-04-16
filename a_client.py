@@ -12,9 +12,8 @@ import threading
 import numpy as np
 import pyaudio
 import base64
-import time
 
-SERVER = "192.168.29.60"
+SERVER = "192.168.29.224"
 V_PORT = 65432
 A_PORT = 50007
 VP_ADDR = (SERVER,V_PORT)
@@ -51,38 +50,8 @@ class Meeting():
         self.audio_stream = None
         self.stream = None 
         self.audio = pyaudio.PyAudio()
-        self.audio_sending = False
-
-    def setup_audio_streams(self):
-        try:
-            if hasattr(self, 'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                
-            if hasattr(self, 'stream') and self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-                
-            self.audio_stream = self.audio.open(
-                format=A_FORMAT, 
-                channels=CHANNELS, 
-                rate=RATE,
-                input=True, 
-                frames_per_buffer=CHUNK
-            )
-            
-            self.stream = self.audio.open(
-                format=A_FORMAT, 
-                channels=CHANNELS, 
-                rate=RATE,
-                output=True, 
-                frames_per_buffer=CHUNK
-            )
-            print("Audio streams successfully initialized")
-
-            
-        except Exception as e:
-            print(f"Error setting up audio streams: {e}")
+        self.audio_stream = self.audio.open(format=A_FORMAT, channels=CHANNELS, rate=RATE,input=True, frames_per_buffer=CHUNK)
+        self.stream = self.audio.open(format= A_FORMAT, channels=CHANNELS, rate=RATE,output=True, frames_per_buffer=CHUNK)
 
     def Create_Meeting(self,host_name):
 
@@ -115,9 +84,7 @@ class Meeting():
                                           alert = True,
                                           )
             self.toast.show_toast()
-            return
-
-        self.setup_audio_streams()            
+            return            
 
         if HNE_Sumbit_btn:
             HNE_name_pop.destroy()
@@ -251,9 +218,6 @@ class Meeting():
             self.grid_thread = threading.Thread(target=self.display_recv_frame, daemon=True)
             self.grid_thread.start()
 
-            self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
-            self.audio_thread.start()
-
             self.Arecv_thread = threading.Thread(target=self.recv_audio, daemon=True)
             self.Arecv_thread.start()
         except Exception as e:
@@ -296,8 +260,6 @@ class Meeting():
                                           )
             self.toast.show_toast()
             return
-
-        self.setup_audio_streams()
             
         if MC_Sumbit_btn:
             con_pop.destroy()
@@ -601,134 +563,83 @@ class Meeting():
         
         self.recv_video_label.after(10,self.display_recv_frame)
 
-    def encode_audio(self, audio_np):
-        """Compress and encode audio data for transmission"""
-        compressed = zlib.compress(audio_np.tobytes())
+    def encode_audio(self,audio_np):
+        compressed = zlib.compress(audio_np.astype(np.int16).tobytes())
         return base64.b64encode(compressed)
-
-    def decode_audio(self, data):
-        """Decode and decompress received audio data"""
-        try:
-            raw = zlib.decompress(base64.b64decode(data))
-            return np.frombuffer(raw, dtype=np.int16)
-        except Exception as e:
-            print(f"Error decoding audio: {e}")
-            return np.zeros(CHUNK, dtype=np.int16)
-
+    
+    def decode_audio(self,data):    
+        decompressed = zlib.decompress(base64.b64decode(data))
+        return np.frombuffer(decompressed, dtype=np.int16)
+    
     def start_stop_audio(self):
-        """Toggle audio sending on/off"""
         if self.audio_variable.get():
-            # Starting audio
-            print("Unmuting audio")
-            self.audio_sending = True
+            # Start audio sending
+            if not hasattr(self, 'audio_thread') or not self.audio_thread.is_alive():
+                self.audio_sending = True  # custom flag to control loop
+                self.audio_thread = threading.Thread(target=self.send_audio, daemon=True)
+                self.audio_thread.start()
         else:
-            # Stopping audio
-            print("Muting audio")
+            # Stop audio sending
             self.audio_sending = False
-            # We don't stop the thread, just stop sending real audio
 
     def send_audio(self):
-        print("Audio sending thread started")
-        try:
-            while hasattr(self, 'audio_socket') and self.audio_socket:
-                try:
-                    # Always send audio frames, just send silence when muted
-                    if self.audio_sending and hasattr(self, 'audio_stream') and self.audio_stream:
-                        data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
-                        audio_np = np.frombuffer(data, dtype=np.int16)
-                    else:
-                        # Send silent frames when muted
-                        audio_np = np.zeros(CHUNK, dtype=np.int16)
-                    
-                    # Always encode and send (silent or real audio)
-                    encoded = self.encode_audio(audio_np)
-                    size = struct.pack('!I', len(encoded))
-                    self.audio_socket.sendall(size + encoded)
-                    
-                    # Brief pause to control sending rate
-                    time.sleep(0.01)
-                except Exception as e:
-                    print(f"Error sending audio: {e}")
-                    break
-        except Exception as e:
-            print(f"Audio sending thread error: {e}")
-        print("Audio sending thread ended")
-        
+        while True:
+            try:
+                if self.audio_sending:
+                    data = self.audio_stream.read(CHUNK, exception_on_overflow=False)
+                    audio_np = np.frombuffer(data, dtype=np.int16)
+                else:
+                    audio_np = np.zeros(CHUNK, dtype=np.int16)
+                encoded = self.encode_audio(audio_np)
+                size = struct.pack('!I', len(encoded))
+                self.audio_socket.sendall(size + encoded)
+            except Exception as e:
+                print(f"Error on sending audio: {e}")
+                break
+
     def recv_audio(self):
-        """Thread function to continuously receive and play audio from the server"""
-        print("Audio receiving thread started")
-        
-        try:
-            while hasattr(self, 'audio_socket') and self.audio_socket:
-                try:
-                    # Read size header
-                    size_data = self.audio_socket.recv(4)
-                    if not size_data or len(size_data) < 4:
-                        print("No data received from audio socket")
-                        break
-                        
-                    # Get the expected data size
-                    size = struct.unpack('!I', size_data)[0]
-                    
-                    # Read the full audio packet
-                    data = b''
-                    while len(data) < size:
-                        packet = self.audio_socket.recv(size - len(data))
-                        if not packet:
-                            break
-                        data += packet
-                    
-                    if len(data) < size:
-                        print(f"Incomplete audio data received: {len(data)}/{size}")
-                        continue
-                    
-                    # Decode and play the audio
-                    audio_np = self.decode_audio(data)
-                    
-                    # Always play the received audio, regardless of mic status
-                    if hasattr(self, 'stream') and self.stream:
-                        self.stream.write(audio_np.tobytes())
-                        
-                except Exception as e:
-                    print(f"Error receiving audio: {e}")
+        while True:
+            try:
+                size_data = self.audio_socket.recv(4)
+                if not size_data:
                     break
-        except Exception as e:
-            print(f"Audio receiving thread error: {e}")
-        print("Audio receiving thread ended")
+                size = struct.unpack('!I', size_data)[0]
+                data = b''
+                while len(data) < size:
+                    packet = self.audio_socket.recv(size - len(data))
+                    if not packet:
+                        break
+                    data += packet
+
+                audio_np = self.decode_audio(data)
+                self.stream.write(audio_np.tobytes())
+            except Exception as e:
+                print(f"Error on receiving audio: {e}")
+                break
 
     def end_meeting(self, Close):
         if Close in ("End all meeting", "End meeting"):
-            print("Ending meeting...")
-            # Stop sending audio
-            self.audio_sending = False
-            
-            # Release camera
             if hasattr(self, 'cap') and self.cap:
                 self.cap.release()
                 self.cap = None
-            
-            # Close audio streams properly
-            try:
-                if hasattr(self, 'audio_stream') and self.audio_stream:
-                    self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                    self.audio_stream = None
-                
-                if hasattr(self, 'stream') and self.stream:
-                    self.stream.stop_stream()
-                    self.stream.close()
-                    self.stream = None
-            except Exception as e:
-                print(f"Error closing audio streams: {e}")
-            
-            # Close sockets
+
+            if hasattr(self, 'send_thread') and self.send_thread.is_alive():
+                self.send_thread.join()
+            if hasattr(self, 'recv_thread') and self.recv_thread.is_alive():
+                self.recv_thread.join()
+            if hasattr(self, 'audio_thread') and self.audio_thread.is_alive():
+                self.audio_thread.join()
+            if hasattr(self, 'Arecv_thread') and self.Arecv_thread.is_alive():
+                self.Arecv_thread.join()
+            if hasattr(self, 'grid_thread') and self.grid_thread.is_alive():
+                self.grid_thread.join()
+
             if hasattr(self, 'client_socket') and self.client_socket:
                 try:
                     self.client_socket.shutdown(socket.SHUT_RDWR)
                 except:
                     pass
                 self.client_socket.close()
-                self.client_socket = None
 
             if hasattr(self, 'audio_socket') and self.audio_socket:
                 try:
@@ -738,19 +649,9 @@ class Meeting():
                 self.audio_socket.close()
                 self.audio_socket = None
 
-            # Close the meeting window
             self.Meeting_root.destroy()
             btn1.config(state=NORMAL)
             btn2.config(state=NORMAL)
-            
-            # Show toast notification
-            self.toast = ToastNotification(title = "quak join",
-                                            message = "Meeting ended",
-                                            duration= 3000,
-                                            bootstyle = "danger",
-                                            alert = True,
-                                            )
-            self.toast.show_toast()
 
 
 #GUI Creation
