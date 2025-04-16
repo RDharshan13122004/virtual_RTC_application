@@ -47,75 +47,75 @@
 
 ## ▶️ Usage
 
-    ### Start the Server
-        - Run server.py to start the video and audio servers.
-        - The server listens for incoming connections on separate ports for video and audio.
+1. **Start the Server**
+    - Run server.py to start the video and audio servers.
+    - The server listens for incoming connections on separate ports for video and audio.
 
-            ```bash
-            python server.py
+    ```bash
+    python server.py
 
 
-    ### Create a Meeting
-        - Run client.py:
+2. **Create a Meeting**
+    - Run client.py:
 
-            ```bash
+    ```bash
+    python client.py
+    
+    - Click "Create a Meeting" and enter your name.
 
-            python client.py
-        - Click "Create a Meeting" and enter your name.
+3. **Join a Meeting**
+    - Open the client application.
 
-    ### Join a Meeting
-        - Open the client application.
+    - Click "Join a Meeting", enter the meeting ID and password, and connect.
 
-        - Click "Join a Meeting", enter the meeting ID and password, and connect.
+4. **In-Meeting Controls**
+    - Toggle Audio/Video: Mute/unmute audio or start/stop video.
 
-    ### In-Meeting Controls
-        - Toggle Audio/Video: Mute/unmute audio or start/stop video.
-
-        -End Meeting: Click "End Meeting" to leave the session.
+    -End Meeting: Click "End Meeting" to leave the session.
 
 ## 📁 File Structure
-    ```bash
+
     virtual_RTC_application/
     │
-    ├── server.py          # Server-side implementation for audio and video streaming
-    ├── client.py          # Client-side implementation with GUI
-    ├── img/               # Image assets for the GUI
+    ├── server.py           Server-side implementation for audio and video streaming
+    ├── client.py           Client-side implementation with GUI
+    ├── img/                Image assets for the GUI
     │   ├── video-camera.png
     │   ├── audio.png
     │   ├── add.png
     │   ├── information.png
     │   └── ppico.ico
-    ├── requirements.txt   # List of dependencies
-    └── README.md          # Documentation
+    ├── requirements.txt    List of dependencies
+    └── README.md           Documentation
 
 ## 🧑‍💻 Technologies Used
-    - Python: Core programming language.
+- **Python**: Core programming language.
 
-    - Socket Programming: For real-time communication.
+- **Socket Programming**: For real-time communication.
 
-    - OpenCV: For video capture, processing, and display.
+- **OpenCV**: For video capture, processing, and display.
 
-    - PyAudio: For audio capture and playback.
+- **PyAudio**: For audio capture and playback.
 
-    - ttkbootstrap: For modern UI elements.
+- **ttkbootstrap**: For modern UI elements.
 
-    - Zlib + Base64: For compression and encoding of media streams.
+- **Zlib + Base64**: For compression and encoding of media streams.
 
-    - Threading: For handling concurrent client connections.
+- **Threading**: For handling concurrent client connections.
 
 
 
 ## 🤝 Contributing
-    - Contributions are welcome!
+- Contributions are welcome!
 
-    - Fork the repository.
+- Fork the repository.
 
-    - Create a new branch for your feature or fix.
+- Create a new branch for your feature or fix.
 
-    - Commit your changes.
+- Commit your changes.
 
-    - Submit a pull request with a detailed description.
+- Submit a pull request with a detailed description.
 
 ## 📄 License
-    - This project is licensed under the MIT License.
-    - Feel free to use, modify, and distribute this software under the terms of the license.
+- This project is licensed under the MIT License.
+- Feel free to use, modify, and distribute this software under the terms of the license.
