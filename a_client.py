@@ -761,11 +761,11 @@ def connection_pop():
     MC_SERVER_IP_entry = tb.Entry(con_pop,bootstyle="success")
     MC_SERVER_IP_entry.pack(padx=40,ipadx=60,pady=10)
 
-    # MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
-    # MC_Meeting_password_label.pack(padx=40,pady=10)
+    MC_Meeting_password_label = tb.Label(con_pop,text="Enter the Password:",font=("Rockwell Extra Bold",18))
+    MC_Meeting_password_label.pack(padx=40,pady=10)
 
-    # MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
-    # MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
+    MC_Meeting_password_entry = tb.Entry(con_pop,bootstyle = "success")
+    MC_Meeting_password_entry.pack(padx=40,ipadx=60,pady=10)
 
     MC_name_entry_label = tb.Label(con_pop, text="Enter your Name:",font=("Rockwell Extra Bold",18))
     MC_name_entry_label.pack(padx=40,pady=10)
