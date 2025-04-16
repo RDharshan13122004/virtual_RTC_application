@@ -97,7 +97,7 @@ class Meeting():
                 self.audio_socket.connect(AP_ADDR)
                 #print("Connected to audio server.")
 
-            self.toast = ToastNotification(title = "quak join",
+            self.toast = ToastNotification(title = "LinkHub",
                                         message = "Meeting is started",
                                         duration= 3000,
                                         bootstyle = "success",
@@ -106,7 +106,7 @@ class Meeting():
             self.toast.show_toast()
         except Exception as e:
             #print(f"Error connecting to server: {e}")
-            self.toast = ToastNotification(title = "quak join",
+            self.toast = ToastNotification(title = "LinkHub",
                                           message = "Something went wrong",
                                           duration= 3000,
                                           bootstyle = "danger",
@@ -273,7 +273,7 @@ class Meeting():
                 self.audio_socket.connect((MC_SERVER_IP_entry.get(),A_PORT))
                 #print("Connected to audio server.")
 
-                self.toast = ToastNotification(title = "quak join",
+                self.toast = ToastNotification(title = "LinkHub",
                                           message = "Meeting is started",
                                           duration= 3000,
                                           bootstyle = "success",
@@ -283,7 +283,7 @@ class Meeting():
 
         except Exception as e:
             #print(f"Error connecting to server: {e}")
-            self.toast = ToastNotification(title = "quak join",
+            self.toast = ToastNotification(title = "LinkHub",
                                           message = "Something went wrong",
                                           duration= 3000,
                                           bootstyle = "danger",
@@ -729,7 +729,7 @@ def end_meeting(self, Close):
         btn2.config(state=NORMAL)
         
         # Show toast notification
-        self.toast = ToastNotification(title = "quak join",
+        self.toast = ToastNotification(title = "LinkHub",
                                         message = "Meeting ended",
                                         duration= 3000,
                                         bootstyle = "danger",
@@ -739,7 +739,7 @@ def end_meeting(self, Close):
 
 
 #GUI Creation
-root = tb.Window(title="quak join",themename="morph",size=(800,400))
+root = tb.Window(title="LinkHub",themename="morph",size=(800,400))
 
 root.iconbitmap("img/ppico.ico")
 
@@ -800,7 +800,7 @@ app_icon2 = Image.open("img/add.png") #type: ignore
 resize_app_icon2 = app_icon2.resize((35,35))
 meeting_icon2 = ImageTk.PhotoImage(resize_app_icon2)
 
-title_label = tb.Label(root,text="quak join",bootstyle="primary",font=("Old English Text MT",50,'bold'))
+title_label = tb.Label(root,text="LinkHub",bootstyle="primary",font=("Old English Text MT",50,'bold'))
 title_label.pack(pady=20,padx=20)
 
 frame = tb.Frame(root)
