@@ -47,31 +47,31 @@
 
 ## ▶️ Usage
 
-### Start the Server
-    - Run server.py to start the video and audio servers.
-    - The server listens for incoming connections on separate ports for video and audio.
+    ### Start the Server
+        - Run server.py to start the video and audio servers.
+        - The server listens for incoming connections on separate ports for video and audio.
 
-        ```bash
-        python server.py
+            ```bash
+            python server.py
 
 
-### Create a Meeting
-    - Run client.py:
+    ### Create a Meeting
+        - Run client.py:
 
-        ```bash
+            ```bash
 
-        python client.py
-    - Click "Create a Meeting" and enter your name.
+            python client.py
+        - Click "Create a Meeting" and enter your name.
 
-### Join a Meeting
-    - Open the client application.
+    ### Join a Meeting
+        - Open the client application.
 
-    - Click "Join a Meeting", enter the meeting ID and password, and connect.
+        - Click "Join a Meeting", enter the meeting ID and password, and connect.
 
-### In-Meeting Controls
-    - Toggle Audio/Video: Mute/unmute audio or start/stop video.
+    ### In-Meeting Controls
+        - Toggle Audio/Video: Mute/unmute audio or start/stop video.
 
-    -End Meeting: Click "End Meeting" to leave the session.
+        -End Meeting: Click "End Meeting" to leave the session.
 
 ## 📁 File Structure
     ```bash
