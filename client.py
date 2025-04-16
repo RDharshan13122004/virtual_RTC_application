@@ -681,61 +681,61 @@ class Meeting():
             print(f"Audio receiving thread error: {e}")
         print("Audio receiving thread ended")
 
-def end_meeting(self, Close):
-    if Close in ("End all meeting", "End meeting"):
-        print("Ending meeting...")
-        # Stop sending audio
-        self.audio_sending = False
-        
-        # Release camera
-        if hasattr(self, 'cap') and self.cap:
-            self.cap.release()
-            self.cap = None
-        
-        # Close audio streams properly
-        try:
-            if hasattr(self, 'audio_stream') and self.audio_stream:
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
+    def end_meeting(self, Close):
+        if Close in ("End all meeting", "End meeting"):
+            print("Ending meeting...")
+            # Stop sending audio
+            self.audio_sending = False
             
-            if hasattr(self, 'stream') and self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-                self.stream = None
-        except Exception as e:
-            print(f"Error closing audio streams: {e}")
-        
-        # Close sockets
-        if hasattr(self, 'client_socket') and self.client_socket:
+            # Release camera
+            if hasattr(self, 'cap') and self.cap:
+                self.cap.release()
+                self.cap = None
+            
+            # Close audio streams properly
             try:
-                self.client_socket.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.client_socket.close()
-            self.client_socket = None
+                if hasattr(self, 'audio_stream') and self.audio_stream:
+                    self.audio_stream.stop_stream()
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                
+                if hasattr(self, 'stream') and self.stream:
+                    self.stream.stop_stream()
+                    self.stream.close()
+                    self.stream = None
+            except Exception as e:
+                print(f"Error closing audio streams: {e}")
+            
+            # Close sockets
+            if hasattr(self, 'client_socket') and self.client_socket:
+                try:
+                    self.client_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.client_socket.close()
+                self.client_socket = None
 
-        if hasattr(self, 'audio_socket') and self.audio_socket:
-            try:
-                self.audio_socket.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.audio_socket.close()
-            self.audio_socket = None
+            if hasattr(self, 'audio_socket') and self.audio_socket:
+                try:
+                    self.audio_socket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.audio_socket.close()
+                self.audio_socket = None
 
-        # Close the meeting window
-        self.Meeting_root.destroy()
-        btn1.config(state=NORMAL)
-        btn2.config(state=NORMAL)
-        
-        # Show toast notification
-        self.toast = ToastNotification(title = "LinkHub",
-                                        message = "Meeting ended",
-                                        duration= 3000,
-                                        bootstyle = "danger",
-                                        alert = True,
-                                        )
-        self.toast.show_toast()
+            # Close the meeting window
+            self.Meeting_root.destroy()
+            btn1.config(state=NORMAL)
+            btn2.config(state=NORMAL)
+            
+            # Show toast notification
+            self.toast = ToastNotification(title = "LinkHub",
+                                            message = "Meeting ended",
+                                            duration= 3000,
+                                            bootstyle = "danger",
+                                            alert = True,
+                                            )
+            self.toast.show_toast()
 
 
 #GUI Creation
