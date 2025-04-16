@@ -45,6 +45,8 @@
     ```bash
     python client.py
 
+---
+
 ## ▶️ Usage
 
 1. **Start the Server**
@@ -73,6 +75,8 @@
 
     - End Meeting: Click "End Meeting" to leave the session.
 
+---
+
 ## 📁 File Structure
 
     virtual_RTC_application/
@@ -87,6 +91,8 @@
     │   └── ppico.ico
     ├── requirements.txt    List of dependencies
     └── README.md           Documentation
+
+---
 
 ## 🧑‍💻 Technologies Used
 - **Python**: Core programming language.
@@ -103,7 +109,7 @@
 
 - **Threading**: For handling concurrent client connections.
 
-
+---
 
 ## 🤝 Contributing
 - Contributions are welcome!
@@ -115,6 +121,8 @@
 - Commit your changes.
 
 - Submit a pull request with a detailed description.
+
+---
 
 ## 📄 License
 - This project is licensed under the MIT License.
