@@ -83,11 +83,11 @@ Run the following command to package the client.py file into an executable:
 pyinstaller --onefile --windowed --icon=img/ppico.ico --name="LinkHub" client.py
 ```
 
-- --onefile: Packages everything into a single executable file.
-- --windowed: Ensures the application runs without a console window (useful for GUI applications).
-- --icon=img/ppico.ico: Specifies the path to the icon file. Here, it assumes the ppico.ico file is inside the img folder relative to the project directory.
-- --name="LinkHub": Sets the name of the output executable to LinkHub.
-- client.py: The main Python file to be converted into an executable.
+- ```--onefile:``` Packages everything into a single executable file.
+- ```--windowed:``` Ensures the application runs without a console window (useful for GUI applications).
+- ```--icon=img/ppico.ico```: Specifies the path to the icon file. Here, it assumes the ppico.ico file is inside the img folder relative to the project directory.
+- ```--name="LinkHub"```: Sets the name of the output executable to LinkHub.
+- ```client.py```: The main Python file to be converted into an executable.
 
 **⚠️Note**: Before converting the fle to application make sure that the enter the **SERVER IP** address in **Client.py** file then only application could connection the server. 
 
