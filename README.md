@@ -47,6 +47,51 @@
 
 ---
 
+##  App Conversion Guide
+
+This guide explains how to convert the **Virtual RTC Application** into a standalone executable application using **PyInstaller**. By following this guide, you can package the Python-based application into a distributable format that can run on systems without requiring Python or dependencies to be pre-installed.
+
+### 📦 Prerequisites
+
+Before converting the application, ensure the following are installed on your system:
+
+1. Python: Version 3.8 or higher.
+2. Pip: Python's package manager.
+3. PyInstaller: Install it using the following command:
+
+```bash
+pip install pyinstaller
+```
+
+### 🔧 Steps to Convert the Application
+
+1. Install Dependencies:
+Ensure all required dependencies are installed. Use the requirements.txt file to install them:
+
+```bash
+pip install -r requirements.txt
+```
+2. Navigate to the Project Directory:
+Open a terminal or command prompt and navigate to the directory containing the application files:
+```bash
+cd c:\Users\Desktop\git\virtual_RTC_application
+```
+
+3. Create the Executable for the Client:
+Run the following command to package the client.py file into an executable:
+```bash
+pyinstaller --onefile --windowed --icon=img/ppico.ico --name="LinkHub" client.py
+```
+
+- --onefile: Packages everything into a single executable file.
+- --windowed: Ensures the application runs without a console window (useful for GUI applications).
+- --icon=img/ppico.ico: Specifies the path to the icon file. Here, it assumes the ppico.ico file is inside the img folder relative to the project directory.
+- --name="LinkHub": Sets the name of the output executable to LinkHub.
+- client.py: The main Python file to be converted into an executable.
+
+**⚠️Note**: Before converting the fle to application make sure that the enter the **SERVER IP** address in **Client.py** file then only application could connection the server. 
+
+---
 ## ▶️ Usage
 
 1. **Start the Server**
