@@ -90,6 +90,10 @@ pyinstaller --onefile --windowed --icon=img/ppico.ico --name="LinkHub" client.py
 - ```client.py```: The main Python file to be converted into an executable.
 
 **⚠️Note**: Before converting the fle to application make sure that the enter the **SERVER IP** address in **Client.py** file then only application could connection the server. 
+---
+
+## Demo Video
+
 
 ---
 ## ▶️ Usage
