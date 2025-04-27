@@ -92,7 +92,9 @@ pyinstaller --onefile --windowed --icon=img/ppico.ico --name="LinkHub" client.py
 **⚠️Note**: Before converting the fle to application make sure that the enter the **SERVER IP** address in **Client.py** file then only application could connection the server. 
 ---
 
-## Demo Video
+## Demo
+
+<img src="img/Screenshot 2025-04-17 141513.png" alt="app icon" width=400 heigth=200>
 
 
 ---
