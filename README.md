@@ -104,7 +104,7 @@ pyinstaller --onefile --windowed --icon=img/ppico.ico --name="LinkHub" client.py
 
 <img src="img/Screenshot 2025-04-03 072638.png" alt="meeting img1" width=400 heigth=200>
 
-<img src="img/Screenshot 2025-04-17 134102.png" alt="meeting img2" width=400 heigth=200>
+<img src="img/Screenshot 2025-04-20 134102.png" alt="meeting img2" width=400 heigth=200>
 
 ---
 ## ▶️ Usage
